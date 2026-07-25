@@ -14,8 +14,8 @@ Fast-start context for Gemini-family agents working on `lotto-pension-pro-webapp
 
 - Lotto 6/45 data:
     - Source: `data/winning_stats.json`
-    - Latest draw: `1233`
-    - Rows: `1232`
+    - Latest draw: `1234`
+    - Rows: `1233`
     - Allowed missing draw: `[146]`
 - Pension720+ data:
     - Source: `data/pension720_stats.json`

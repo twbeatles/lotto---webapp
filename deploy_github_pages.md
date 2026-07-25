@@ -54,8 +54,8 @@ Lotto official freshness와 Pension720+ freshness 검증은 공식 endpoint를 �
 
 - Lotto 6/45:
     - 정적 데이터: `data/winning_stats.json`
-    - 최신 회차: `1233`
-    - row 수: `1232`
+    - 최신 회차: `1234`
+    - row 수: `1233`
     - 허용 누락 회차: `[146]`
     - 동기화: `npm run sync:lotto`
     - 개발 검증: `npm run check:data-freshness`
