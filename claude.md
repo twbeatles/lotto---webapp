@@ -83,6 +83,18 @@ Current handoff note for agents working on `lotto-pension-pro-webapp`.
 - Strategy worker requests clean `pending` timers if `worker.postMessage()` fails synchronously.
 - Auto-sync availability is computed from recent failure state, last success time, and available sync path instead of being hard-coded.
 - DOM selector contract and focused implementation regressions live in the smoke suite.
+- Browser built-in sync skips the direct official (CORS-blocked) URL and uses public CORS relays only; Node/scripts still include the direct official candidate.
+- URL query proxy (`?proxyUrl=` / `?proxy=`) is fail-closed: without `UIManager.confirm`, the query proxy is suppressed for the session.
+- Generator/campaign generation blocks when `winningStats` is empty.
+- Cross-tab rehydrate warns when local dirty state overlapped with a remote tab write.
+- Sync failure toasts distinguish third-party CORS fallback from custom-proxy failures.
+- PWA update apply and multi-tab SW activation flush pending local persistence before reload.
+- PWA cache-health UI copy is Korean (`UI_STRINGS.pwa`).
+- Progressive CSP meta is set on `index.html` (`default-src 'self'`, `connect-src 'self' https:` for custom proxies/relays).
+- Constrained clients (coarse pointer / narrow viewport) prefer analysis preset `fast` when fields are still stock `basic`.
+- Cloudflare Worker (`proxy/worker.js`): optional `CORS_ALLOWED_ORIGINS`; `?url=` passthrough limited to `www.dhlottery.co.kr` paths under `/lt645/` and `/pt720/`.
+- `npm run check:asset-versions` guards `CACHE_VERSION` / `STRATEGY_WORKER_ASSET_VERSION` wiring (and git-base bumps when available).
+- Audit reports: `PROJECT_AUDIT.md` (functional), `PROJECT_AUDIT_SCOPES.md` (performance/a11y/PWA/security/CI).
 
 ## Sync and Data Health
 
@@ -108,6 +120,7 @@ Run these before considering a change complete:
 npm run lint
 npm run check:utf8-korean
 npm run check:innerhtml-escape
+npm run check:asset-versions
 npm run check:data-freshness
 npm run check:data-freshness:strict
 npm run check:lotto:official
@@ -172,3 +185,52 @@ npm run bench:ai:full
 - Verification completed:
 - Remaining risks:
 ```
+
+<!-- SPECKIT-AGENT-GUIDE:START -->
+
+## Spec Kit / Spec-Driven Development (AI 에이전트 필독)
+
+> 이 블록은 GitHub Spec Kit 활성화 및 기능 명세 작업 결과를 AI 에이전트가 바로 쓰도록 정리한 안내입니다.
+> 수정 시 마커 주석을 유지하세요. 스크립트/후속 세션이 이 구간을 갱신합니다.
+
+### 이 저장소 상태
+
+- **프로젝트**: `lotto-pension-pro-webapp`
+- **Spec Kit 초기화**: `.specify/ 있음`
+- **에이전트 스킬**: Grok=True, Claude=True, Codex/Agy(.agents)=True
+- **활성 기능**: 아직 `specs/` 기능 명세 없음 — `.specify/` 만 준비된 상태
+
+### 에이전트가 먼저 읽을 파일
+
+1. `.specify/` 및 `.grok/skills` / `.claude/skills` / `.agents/skills` 의 `speckit-*`
+2. 기능 작업 시작 시 `/speckit-specify` 로 `specs/00N-...` 생성
+
+### 권장 워크플로 (스킬 / 슬래시 커맨드)
+
+| 단계 | 커맨드 (Grok/Claude 등) | 산출 |
+|------|-------------------------|------|
+| 원칙 | `/speckit-constitution` | `.specify/memory/constitution.md` |
+| 명세 | `/speckit-specify` | `specs/<id>/spec.md` |
+| 계획 | `/speckit-plan` | `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md` |
+| 작업 | `/speckit-tasks` | `tasks.md` |
+| 구현 | `/speckit-implement` | 코드 (tasks 순서) |
+| 갭점검 | `/speckit-converge` | `tasks.md` 에 Phase Convergence **append-only** |
+
+- Codex skills 모드: `$speckit-specify` 형태일 수 있음
+- 스킬 파일: `.grok/skills/speckit-*/SKILL.md`, `.claude/skills/speckit-*/SKILL.md`
+
+### 작업 규칙 (에이전트)
+
+1. **새 기능/큰 변경 전** 활성 `spec.md`·`tasks.md` 를 읽고, 없으면 specify→plan→tasks 순으로 만든다.
+2. **구현은 tasks.md 체크리스트**를 따른다. 완료 시 `- [ ]` → `- [x]`.
+3. **`/speckit-converge` 는 tasks.md 를 rewrite 하지 않는다** — 잔여 갭만 하단 Phase 로 append.
+4. brownfield 프로젝트는 상당 기능이 이미 있을 수 있다. 중복 구현 전에 코드·`[x]` 태스크를 확인한다.
+5. 웹/데스크톱 패리티 등 **out-of-scope Assumptions** 는 새 feature 로 분리하는 것을 선호한다.
+6. 기본 integration 은 **grok** 이며, 동일 레포에 claude / codex / agy 스킬도 multi-install 되어 있을 수 있다.
+
+### 관련 링크
+
+- Spec Kit: https://github.com/github/spec-kit
+- 로컬 CLI: `specify` (uv tool, 버전은 `specify version`)
+
+<!-- SPECKIT-AGENT-GUIDE:END -->

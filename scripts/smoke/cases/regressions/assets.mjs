@@ -254,6 +254,18 @@ async function runServiceWorkerDataNetworkFirstRegression() {
     assert.equal(abortObserved, true, 'timed-out network-first fetch must be aborted');
 }
 
+async function runContentSecurityPolicyMetaRegression() {
+    const indexSource = await readFile(resolve(process.cwd(), 'index.html'), 'utf8');
+    assert.match(
+        indexSource,
+        /http-equiv="Content-Security-Policy"/,
+        'index must declare a progressive Content-Security-Policy meta tag'
+    );
+    assert.match(indexSource, /default-src 'self'/, 'CSP must default to self');
+    assert.match(indexSource, /script-src 'self'/, 'CSP must restrict scripts to self');
+    assert.match(indexSource, /connect-src 'self' https:/, 'CSP must allow https connect for custom proxies and CORS relays');
+}
+
 async function runWebManifestInstallabilityRegression() {
     const manifest = JSON.parse(await readFile(resolve(process.cwd(), 'manifest.json'), 'utf8'));
 
@@ -444,6 +456,7 @@ export {
     runServiceWorkerManifestParityRegression,
     runServiceWorkerPrecacheReachabilityRegression,
     runServiceWorkerReloadPolicyRegression,
+    runContentSecurityPolicyMetaRegression,
     runWebManifestInstallabilityRegression,
     runUtf8KoreanIntegrityRegression
 };

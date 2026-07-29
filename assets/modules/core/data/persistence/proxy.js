@@ -108,7 +108,8 @@ export const dataPersistenceProxyMethods = {
 
     async ensureQueryProxyAcknowledged() {
         const queryProxy = this.getQueryProxyUrl();
-        if (!queryProxy?.valid || !queryProxy?.url) return true;
+        // buildProxyConfig exposes { url, invalid } (not `valid`)
+        if (!queryProxy?.url || queryProxy.invalid) return true;
         if (this._isQueryProxySuppressed(queryProxy)) return false;
 
         const fingerprint = this._getQueryProxyFingerprint(queryProxy);
@@ -120,7 +121,18 @@ export const dataPersistenceProxyMethods = {
             // sessionStorage unavailable
         }
 
-        if (typeof UIManager?.confirm !== 'function') return true;
+        // Fail closed: never auto-accept a query proxy without an explicit user confirm.
+        if (typeof UIManager?.confirm !== 'function') {
+            this._queryProxyRejected = fingerprint;
+            if (typeof UIManager?.toast === 'function') {
+                UIManager.toast(
+                    '확인 대화상자를 사용할 수 없어 URL 프록시를 무시합니다. 설정에서 신뢰할 수 있는 주소를 저장하세요.',
+                    'warning',
+                    4000
+                );
+            }
+            return false;
+        }
 
         const confirmed = await UIManager.confirm({
             title: 'URL 데이터 연결 주소 확인',

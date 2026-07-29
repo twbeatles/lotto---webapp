@@ -2,7 +2,11 @@ import { $ } from '../utils/utils.js';
 import { StrategyEngine } from '../core/StrategyEngine.js';
 import { StrategyWorkerClient } from '../core/StrategyWorkerClient.js';
 import { StrategyPresetController } from '../utils/strategyPresets.js';
-import { applyAnalysisPresetToFields, syncAnalysisPresetSelect } from '../utils/analysisPresets.js';
+import {
+    applyAnalysisPresetToFields,
+    preferConstrainedClientAnalysisDefaults,
+    syncAnalysisPresetSelect
+} from '../utils/analysisPresets.js';
 import { aiFormMethods } from './ai/form.js';
 import { aiRenderingMethods } from './ai/rendering.js';
 
@@ -36,6 +40,7 @@ export class AiModule {
 
         this.populateStrategySelect();
         this.applySavedStrategyPrefs();
+        preferConstrainedClientAnalysisDefaults('ai');
         this.presetController = new StrategyPresetController({
             data: this.app.data,
             scope: 'ai',

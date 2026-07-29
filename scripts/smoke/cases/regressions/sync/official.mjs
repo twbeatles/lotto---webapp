@@ -15,8 +15,10 @@ import {
 import proxyWorker, {
     estimateLatestDrawKST as estimateLatestProxyDrawKST,
     getMaxAllowedDrawNo,
+    isAllowedDhlotteryProxyPath,
     isAllowedProxyDrawNo,
-    MAX_FUTURE_DRAW_SLACK
+    MAX_FUTURE_DRAW_SLACK,
+    resolveCorsHeaders
 } from '../../../../../proxy/worker.js';
 
 async function runStaticDataFreshnessBudgetRegression() {
@@ -226,6 +228,51 @@ async function runProxyWorkerDrawScheduleAndFutureCapRegression() {
     assert.equal(rangePayload.maxDrawNo, currentMax, 'range rejection must report the max allowed draw');
 }
 
+async function runProxyWorkerUrlPassthroughPathAllowlistRegression() {
+    assert.equal(isAllowedDhlotteryProxyPath('/lt645/selectPstLt645Info.do'), true, 'lt645 paths must be allowed');
+    assert.equal(isAllowedDhlotteryProxyPath('/pt720/selectPstPt720WnList.do'), true, 'pt720 paths must be allowed');
+    assert.equal(isAllowedDhlotteryProxyPath('/other/secret'), false, 'unrelated paths must be rejected');
+
+    const blocked = await proxyWorker.fetch(
+        new Request(
+            'https://worker.example/?url=' +
+                encodeURIComponent('https://www.dhlottery.co.kr/gameResult.do?method=byWin')
+        )
+    );
+    assert.equal(blocked.status, 403, 'non-allowlisted dhlottery paths must return 403');
+    const payload = await blocked.json();
+    assert.equal(payload.error, 'Forbidden path', 'path rejection payload must name the policy');
+}
+
+function runProxyWorkerCorsOriginAllowlistRegression() {
+    const open = resolveCorsHeaders(new Request('https://worker.example/proxy/latest'), {});
+    assert.equal(open['Access-Control-Allow-Origin'], '*', 'default CORS must remain open for compatibility');
+
+    const allowed = resolveCorsHeaders(
+        new Request('https://worker.example/proxy/latest', {
+            headers: { Origin: 'https://twbeatles.github.io' }
+        }),
+        { CORS_ALLOWED_ORIGINS: 'https://twbeatles.github.io,https://example.com' }
+    );
+    assert.equal(
+        allowed['Access-Control-Allow-Origin'],
+        'https://twbeatles.github.io',
+        'configured allowlist must echo a matching Origin'
+    );
+
+    const denied = resolveCorsHeaders(
+        new Request('https://worker.example/proxy/latest', {
+            headers: { Origin: 'https://evil.example' }
+        }),
+        { CORS_ALLOWED_ORIGINS: 'https://twbeatles.github.io' }
+    );
+    assert.equal(
+        denied['Access-Control-Allow-Origin'],
+        undefined,
+        'disallowed Origin must not receive Access-Control-Allow-Origin'
+    );
+}
+
 function runLottoOfficialFetchWrappedErrorRegression() {
     const timeout = new TypeError('fetch failed');
     timeout.cause = { code: 'UND_ERR_CONNECT_TIMEOUT' };
@@ -275,6 +322,8 @@ export {
     runStaticDataFreshnessBudgetRegression,
     runEstimateLatestDrawKstBoundaryRegression,
     runProxyWorkerDrawScheduleAndFutureCapRegression,
+    runProxyWorkerUrlPassthroughPathAllowlistRegression,
+    runProxyWorkerCorsOriginAllowlistRegression,
     runLottoOfficialFreshnessComparisonRegression,
     runLottoOfficialFetchRetryRegression,
     runLottoOfficialFetchWrappedErrorRegression

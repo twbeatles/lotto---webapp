@@ -61,6 +61,11 @@ const coreStrategyPlan = [
         awaited: true
     },
     {
+        name: 'runGeneratorDataUnavailableGuardRegression',
+        label: 'generator data-unavailable guard regression',
+        awaited: true
+    },
+    {
         name: 'runCampaignDerivedSeedRegression',
         label: 'campaign derived-seed regression',
         argKey: 'stats180'

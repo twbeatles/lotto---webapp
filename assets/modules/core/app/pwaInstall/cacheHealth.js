@@ -1,3 +1,5 @@
+import { UI_STRINGS } from '../../../utils/strings.js';
+
 export const appPwaInstallCacheHealthMethods = {
     async _refreshPwaCacheHealth() {
         if (typeof fetch !== 'function') return null;
@@ -31,18 +33,22 @@ export const appPwaInstallCacheHealthMethods = {
         const note = document.getElementById('pwaCacheNote');
         if (!badge && !note) return;
 
+        const copy = UI_STRINGS.pwa || {};
         const health = this._pwaCacheHealth;
-        let state = { label: 'pending', code: 'prompt' };
-        let message = 'Cache health will be checked after the service worker is active.';
+        let state = { label: copy.badgePending || '확인 전', code: 'prompt' };
+        let message = copy.cachePending || '서비스 워커 활성화 후 캐시 상태를 확인합니다.';
         if (health?.available) {
             const count = health.failures?.length || 0;
-            state = count ? { label: `warning ${count}`, code: 'warning' } : { label: 'ok', code: 'success' };
+            state = count
+                ? { label: copy.badgeWarning?.(count) || `주의 ${count}`, code: 'warning' }
+                : { label: copy.badgeOk || '정상', code: 'success' };
             message = count
-                ? `precache failed for ${count} asset(s). Check for an update, then review again.`
-                : `precache completed${health.cacheVersion ? ` (${health.cacheVersion})` : ''}`;
+                ? copy.cacheWarning?.(count) || `캐시 실패 ${count}건. 앱 업데이트를 확인한 뒤 다시 살펴보세요.`
+                : copy.cacheOk?.(health.cacheVersion) ||
+                  (health.cacheVersion ? `기본 캐시 준비 완료 (${health.cacheVersion})` : '기본 캐시 준비 완료');
         } else if (health) {
-            state = { label: 'not ready', code: 'prompt' };
-            message = 'Cache health is not readable yet. This can be normal immediately after install.';
+            state = { label: copy.badgeNotReady || '준비 중', code: 'prompt' };
+            message = copy.cacheNotReady || '아직 캐시 상태를 읽을 수 없습니다. 설치 직후에는 정상일 수 있습니다.';
         }
 
         if (badge) {

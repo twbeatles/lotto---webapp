@@ -45,6 +45,11 @@ const uiAssetDocsPlan = [
         awaited: true
     },
     {
+        name: 'runContentSecurityPolicyMetaRegression',
+        label: 'content security policy meta regression',
+        awaited: true
+    },
+    {
         name: 'runWebManifestInstallabilityRegression',
         label: 'web manifest installability regression',
         awaited: true

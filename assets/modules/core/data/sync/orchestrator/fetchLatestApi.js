@@ -141,6 +141,7 @@ export const dataSyncOrchestratorFetchLatestApiMethods = {
                 );
             } else if (!proxyConfig?.url) {
                 log('고급 데이터 연결 주소 없이 기본 자동 동기화 소스를 사용합니다.', 'SYNC_FALLBACK_SOURCE');
+                log(UI_STRINGS.sync.logThirdPartyHint, 'SYNC_THIRD_PARTY_HINT');
             }
 
             const newItems = [];
@@ -219,7 +220,12 @@ export const dataSyncOrchestratorFetchLatestApiMethods = {
                         source: syncSource,
                         mode: syncMode
                     });
-                    if (profile.toast) UIManager.toast(UI_STRINGS.sync.latestUnavailable, 'warning');
+                    if (profile.toast) {
+                        const toastMessage = proxyConfig?.url
+                            ? UI_STRINGS.sync.latestUnavailable
+                            : UI_STRINGS.sync.latestUnavailableThirdParty;
+                        UIManager.toast(toastMessage, 'warning', 4500);
+                    }
                     return false;
                 }
                 log(UI_STRINGS.sync.logNoNew, 'SYNC_NO_UPDATE');
@@ -246,7 +252,14 @@ export const dataSyncOrchestratorFetchLatestApiMethods = {
                 source: this.getSyncSourceLabel(),
                 mode: this.getSyncMode()
             });
-            if (profile.toast) UIManager.toast(UI_STRINGS.sync.genericError, 'error');
+            if (profile.toast) {
+                const usingCustomProxy = Boolean(this.resolveProxyConfig()?.url);
+                UIManager.toast(
+                    usingCustomProxy ? UI_STRINGS.sync.genericError : UI_STRINGS.sync.genericErrorThirdParty,
+                    'error',
+                    4500
+                );
+            }
             return false;
         } finally {
             if (syncWarnings.length) {

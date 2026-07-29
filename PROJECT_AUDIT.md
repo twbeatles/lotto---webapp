@@ -1,407 +1,404 @@
 # Project Audit
 
-감사 일자: 2026-07-02  
+감사 일자: 2026-07-29  
 대상: `lotto-pension-pro-webapp` (로또·연금복권 프로)  
-방법: `README.md`, `Claude.md` 검토 → CodeGraph MCP 구조/호출 관계 분석 → 보조 grep·파일 열람·`node scripts/smoke/smoke.mjs` 실행
+방법: `README.md` / `Claude.md` 검토 → CodeGraph MCP(`codegraph_explore`) 구조·호출 관계 분석 → 보조 확인(정적 데이터 기준, `node scripts/smoke/smoke.mjs`, `check:data-freshness`)
+
+> **후속 반영 (2026-07-29):** 본 문서 1–2단계 권장 수정이 코드에 반영되었습니다  
+> (데이터 동기화, 문서 레거시 슬러그, 쿼리 프록시 fail-closed, 브라우저 공식 API 스킵,  
+> generator 무데이터 가드, CORS 실패 UX, 크로스탭 dirty 경고, 관련 smoke 보강).  
+> 아래 High-Risk 목록은 **감사 당시 스냅샷**입니다. 현재 게이트는 재검증 통과 상태를 기준으로 하세요.  
+> 확장 스코프: `PROJECT_AUDIT_SCOPES.md`.
 
 ---
 
 ## 1. Executive Summary
 
-전체 위험도: **Medium** (기능은 대체로 견고하나, **브라우저 런타임의 동행복권 공식 API 접근**이 구조적 취약점)
+전체 위험도 (감사 당시): **Medium–High** — 후속 수정 후 게이트·데이터 freshness 항목은 완화됨.
 
-이 프로젝트는 no-build 정적 SPA로, `DataManager` 중심의 상태/영속화, `StrategyWorkerClient` 기반 무거운 연산 오프로딩, smoke 회귀(130건+)로 핵심 경로가 잘 방어되어 있습니다. `node scripts/smoke/smoke.mjs`는 **전체 PASS**였습니다.
+### 핵심 결론
 
-다만 실사용에서 가장 큰 기능 리스크는 다음입니다.
+| 영역 | 평가 |
+|------|------|
+| 아키텍처·영속화 | 양호. dirty flush, cross-tab rehydrate, import 한도/정규화가 체계적 |
+| 동기화 신뢰성 | **구조적 취약**. 브라우저 CORS 때문에 공개 CORS 중계·선택 프록시에 의존 |
+| 보안(XSS/CSV/페이로드) | 양호. `escapeHtml`/`safeHtml`, CSV formula 보호, draw 정규화, innerHTML allowlist |
+| 현재 CI/로컬 게이트 | **실패 확인**. smoke 회귀·데이터 freshness 모두 깨짐 |
+| Critical 데이터 파괴 버그 | 코드 근거상 **즉시 확정된 Critical 손상 경로는 없음** (덮어쓰기 전 백업·정규화 존재) |
 
-1. **동행복권 공식 API는 브라우저에서 CORS로 직접 호출이 불가**한데, 로또 동기화는 서드파티 CORS 프록시(`corsproxy.io`, `CodeTabs`)에 의존하고, 연금복권720+는 브라우저에서 공식 URL 직접 fetch만 시도합니다.
-2. **README의 “프록시 없이도 기본 자동 동기화”** 설명은 기술적으로 맞지만, 실제로는 외부 CORS 중계 가용성에 크게 좌우됩니다.
-3. **URL 쿼리(`?proxyUrl=`)로 데이터 연결 주소가 우선 적용**되어, 공유 링크 경유 시 의도치 않은 프록시 주입 가능성이 있습니다.
+### 지금 가장 중요한 3가지
 
-Critical 수준의 즉시 데이터 손상/보안 취약점은 smoke·정규화·덮어쓰기 백업 흐름 덕분에 **현재 코드에서 확인되지 않았습니다**. High/Medium 이슈는 주로 **외부 API·프록시 의존**, **비동기 경합**, **문서-구현 간격**에 집중됩니다.
+1. **`npm run build` / smoke 실패**: `Claude.md` Spec Kit 구간에 레거시 슬러그 `lotto---webapp`이 남아 smoke 회귀가 중단됨.
+2. **정적 데이터 신선도 실패**: 로또 정적 최신 `1232` vs 추정 최신 `1234` (2회차 지연, 허용 1). `check:data-freshness` 실패.
+3. **브라우저 실시간 동기화의 외부 의존**: 커스텀 Worker 미설정 시 `corsproxy.io` / `CodeTabs` 경유. 가용성·신뢰성·지연이 사용자 환경에 좌우됨.
+
+앱 코어(생성/추천/백업/워커 타임아웃/부분 데이터 게이트)는 smoke·정규화 회귀로 잘 방어되어 있으나, **릴리스 게이트와 데이터 freshness가 현재 깨져 있어 “기능은 있지만 배포 가능 상태가 아님”**에 가깝습니다.
 
 ---
 
 ## 2. Project Understanding
 
-### 2.1 프로젝트 목적
+### 2.1 목적
 
-- 동행복권 **로또 6/45**·**연금복권720+** 당첨 통계 기반 번호 생성·추천·저장·당첨 확인·백업/복원 PWA
-- 사용자 데이터는 **브라우저 localStorage** (+ sessionStorage 임시 결과)
-- 당첨 통계는 **번들 정적 JSON** + 런타임 동기화/캐시
+- 동행복권 **로또 6/45**·**연금복권720+** 통계 기반 번호 생성·추천·저장·당첨 확인·백업/복원 PWA
+- no-build 정적 SPA, GitHub Pages 배포
+- 사용자 데이터: **localStorage** (+ sessionStorage 임시 결과)
+- 당첨 통계: 번들 JSON + 런타임 동기화/캐시
 
-### 2.2 아키텍처 개요
+### 2.2 문서 기준 데이터 베이스라인 (Claude.md)
+
+| 데이터 | 파일 | 문서 기준 |
+|--------|------|-----------|
+| 로또 6/45 | `data/winning_stats.json` | latest `1232`, rows `1231`, missing `[146]` |
+| 연금복권720+ | `data/pension720_stats.json` | latest `323` (`2026-07-09`, `4조 604270` / bonus `945893`) |
+| SW | `sw.js` | `CACHE_VERSION = v31` |
+| Strategy worker | config | `STRATEGY_WORKER_ASSET_VERSION = v23` |
+
+감사 시점 파일 검증:
+
+- 로또: rows `1231`, max draw `1232` (오름차순 저장, 문서와 일치)
+- 연금: rows `323`, latest draw `323` (문서와 일치)
+- 스케줄 추정(KST): 로또 **1234**, 연금 **325** → 정적 데이터가 추정 대비 **2회차 지연**
+
+### 2.3 아키텍처 (CodeGraph 기반)
 
 | 계층 | 경로 | 역할 |
 |------|------|------|
-| 엔트리 | `index.html` → `assets/modules/index.js` | PWA 등록, `LottoApp` 부트 |
-| 앱 코어 | `assets/modules/core/LottoApp.js` | 라우팅, 자동 동기화, 크로스탭, 모듈 로딩 |
-| 상태/영속화 | `assets/modules/core/DataManager.js` + `data/persistence/*` | load/save, dirty flush, cross-tab broadcast |
-| 데이터 동기화 | `assets/modules/core/data/sync/orchestrator.js` | `fetchWinningStats`, `fetchLatestFromAPI` |
-| 연금복권 | `data/pension720/stats.js`, `Pension720Engine`, `features/pension720/*` | 통계 로드·추천·당첨 확인 |
-| 무거운 연산 | `StrategyWorkerClient` → `strategy.worker.js` | 생성/추천 워커 |
-| 기능 UI | `assets/modules/features/*` | Generator, Ai, Check, DataIO, Backtest 등 |
-| 프록시(선택) | `proxy/worker.js` | Cloudflare Worker로 동행복권 API CORS 우회 |
-| 검증 | `scripts/smoke/smoke.mjs` + CI 스크립트 | 정규화·동기화·import·PWA 회귀 |
+| 엔트리 | `index.html` → `assets/modules/index.js` | PWA 등록, 앱 부트 |
+| 앱 코어 | `assets/modules/core/lottoApp/*` + `LottoApp.js` | init, 라우팅, auto-sync, 모듈 lazy load |
+| 상태/영속화 | `DataManager` + `data/persistence/*` | load/save, dirty, cross-tab, proxy |
+| 동기화 | `data/sync/orchestrator/*`, `range/*`, `builtinProviders.js` | 정적 JSON + API/프록시/CORS 중계 |
+| 연금복권 | `data/pension720/*`, `Pension720Engine`, `features/pension720/*` | 통계·추천·저장·CSV |
+| 연산 오프로드 | `StrategyWorkerClient` → `strategy.worker.js` | GENERATE/RECOMMEND |
+| 백테스트 | `backtest.worker.js` | 시뮬레이션 워커 |
+| 데이터 I/O | `features/dataio/*` | 백업 v5, merge/overwrite, 파괴 전 백업 |
+| 프록시(선택) | `proxy/worker.js` | Cloudflare Worker CORS 우회 |
+| 검증 | `scripts/smoke/*`, freshness/official 체크 | 회귀·신선도 게이트 |
 
-### 2.3 주요 실행 흐름 (CodeGraph 기준)
+### 2.4 주요 실행 흐름
 
-```mermaid
-flowchart TD
-    A[index.html / index.js] --> B[LottoApp.init]
-    B --> C[DataManager.load]
-    B --> D[fetchWinningStats - static JSON]
-    B --> E[fetchPension720Stats - static + cache + official]
-    B --> F[queueAutoSync]
-    F --> G[runAutoSync]
-    G --> H[fetchLatestFromAPI]
-    H --> I[_fetchLatestFromAPIInternal]
-    I --> J[fetchRangeChunkedFromProxy]
-    I --> K[fetchMissingDraws / fetchOneDraw]
-    K --> L[buildBuiltInSingleFetchUrls]
-    L --> M[공식 API + corsproxy + CodeTabs]
-
-    B --> N[route / refreshCurrentRoute]
-    N --> O[ensureModule - lazy load]
-    O --> P[Generator / Ai / Pension720 / DataIO ...]
-
-    P --> Q[StrategyWorkerClient.post]
-    Q --> R[strategy.worker.js]
-
-    C --> S[localStorage + cross-tab STORAGE_SYNC_CHANNEL]
-    S --> T[_rehydrateAfterRemotePersistenceSync]
-    T --> U[flushPendingLocalPersistence → load]
+```text
+index.js
+  → LottoApp.init()
+      → initCrossTabSync → data.load()
+      → ensureQueryProxyAcknowledged()   # ?proxyUrl= 확인 대화상자
+      → route('gen')
+      → fetchWinningStats()              # static JSON + localUpdates merge
+      → fetchPension720Stats({ remote }) # static → cache → remote candidates
+      → queueAutoSync(bootstrap/idle)
+  → feature modules (Generator/Ai/Pension720/DataIO/...)
+      → StrategyWorkerClient.post (serial _dispatchChain)
+      → data.save / markDirty / flush on pagehide
 ```
 
-### 2.4 동행복권 API 연동 구조 (실제 반영 사항)
+동기화 내부:
 
-| 게임 | 공식 엔드포인트 (코드 기준) | 정규화 필드 | 브라우저 직접 호출 |
-|------|---------------------------|------------|-------------------|
-| 로또 6/45 | `https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do?srchLtEpsd={회차}` | `ltEpsd`, `tm1WnNo`~`tm6WnNo`, `bnsWnNo`, `ltRflYmd` ↔ `draw_no`, `numbers`, `bonus`, `date` | CORS 차단 → 프록시/서드파티 필요 |
-| 연금720+ | `https://www.dhlottery.co.kr/pt720/selectPstPt720WnList.do` | `psltEpsd`, `wnBndNo`, `wnRnkVl`, `bnsRnkVl`, `psltRflYmd` | CORS 차단 → 브라우저 런타임 공식 갱신 사실상 실패 가능 |
-| QR 스캔 | `m.dhlottery.co.kr` / `www.dhlottery.co.kr` `?v=` 파라미터 | `QrScanner.parseLottoQr` | 로컬 파싱만 (API 호출 없음) |
+```text
+fetchLatestFromAPI
+  → resolveProxyConfig (query > legacy > saved custom > empty)
+  → fetchRangeChunkedFromProxy 및/또는 fetchMissingDraws
+  → buildBuiltInSingleFetchUrls = 공식 API + corsproxy + CodeTabs
+  → normalizeDrawItem 로 형태·보너스 중복 검증 후 setLocalUpdates
+```
 
-레거시 `common.do?method=getLottoNumber` 경로는 **사용하지 않음**. `selectPstLt645Info.do` / `selectPstPt720WnList.do`로 정렬되어 있으며, `parseSyncPayload`·`extractOfficialList`가 복수 응답 형태를 방어적으로 처리합니다.
+### 2.5 강점으로 확인된 방어
 
-### 2.5 문서 vs 구현 정합성
-
-| 항목 | 문서 | 구현 | 판정 |
-|------|------|------|------|
-| SW 캐시 버전 `v30` | Claude.md | `sw.js` `CACHE_VERSION = 'v30'` | 일치 |
-| 백업 스키마 v5, 32MB import | README / Claude.md | `backup.js`, `config.js` `MAX_IMPORT_BYTES` | 일치 |
-| 프록시 없이 기본 동기화 | README | `buildBuiltInSingleFetchUrls`가 서드파티 CORS 프록시 사용 | **부분 불일치** (아래 High 이슈) |
-| 연금복권 공식 캐시 | Claude.md | `lotto_pro_pension720_stats_cache_v1` | 일치 |
-| 탭 명칭 “번호 추천” | README | `Ai.js` / `ai` 라우트 (레거시 AI 명칭 회피) | 일치 |
+- **동기화 단일 비행**: `syncInFlightPromise` + `runId` + AbortController
+- **워커**: 타임아웃/terminate, cache-empty 1회 재시도, postMessage 동기 실패 시 pending 정리, 요청 직렬화(`_dispatchChain`)
+- **import**: 32MB 한도, 티켓 수 한도, `_importInFlight`, overwrite 전 백업, payload version 1–5
+- **draw 정규화**: 6개 번호/중복/보너스 겹침/날짜 달력 검증
+- **XSS/CSV**: escape 헬퍼, formula prefix 보호, innerHTML allowlist + smoke 감사
+- **전략 파라미터**: `normalizeRequest`에서 `simulationCount` 1000–20000 clamp
+- **data health gate**: stats/ai/backtest 는 full 데이터 필요
 
 ---
 
 ## 3. High-Risk Issues
 
-### 3.1 브라우저에서 연금복권720+ 공식 API 직접 fetch — CORS 구조적 실패
+### H1. Smoke 회귀가 문서 레거시 슬러그로 실패
 
-* **위치:** `assets/modules/core/data/pension720/stats.js` — `fetchPension720Stats`, `PENSION720_OFFICIAL_LIST_URL`
-* **문제:** 브라우저에서 동행복권 `selectPstPt720WnList.do`를 `fetch`로 직접 호출합니다. 동행복권 사이트는 GitHub Pages 오리진에 CORS를 허용하지 않아, 런타임 공식 갱신은 대부분 실패하고 정적 JSON·`official_cache`에 의존합니다.
-* **영향:** 사용자가 “최신 연금복권 데이터 확인”을 눌러도 공식 소스 반영이 안 되고, 정적 배포·로컬 캐시가 오래되면 추천/당첨 확인 기준 회차가 뒤처질 수 있습니다. 로또와 달리 **전용 Cloudflare 프록시 경로가 없습니다**.
-* **근거:**
-
-```4:4:assets/modules/core/data/pension720/stats.js
-const PENSION720_OFFICIAL_LIST_URL = 'https://www.dhlottery.co.kr/pt720/selectPstPt720WnList.do';
-```
-
-```92:116:assets/modules/core/data/pension720/stats.js
-        if (useRemote) {
-            try {
-                const res = await this.fetchWithTimeout(
-                    PENSION720_OFFICIAL_LIST_URL,
-                    { cache: 'no-cache', headers: { Accept: 'application/json' } },
-                    7000
-                );
-                // ...
-            } catch (error) {
-                console.warn('연금복권 공식 데이터 조회 실패', error);
-            }
-        }
-```
-
-  로또는 `assets/modules/core/data/sync/providers.js`에서 공식 URL + `corsproxy.io` + `CodeTabs` 폴백이 있으나, 연금720+에는 동등한 경로가 없습니다.
-
-* **권장 수정 방향:**
-  1. `proxy/worker.js`에 연금720+ 목록/단건 엔드포인트 추가 (`/proxy/pension720/latest` 등)
-  2. 또는 로또와 동일하게 검증된 CORS 중계 후보 + 사용자 프록시 설정을 `fetchPension720Stats`에 연결
-  3. 실패 시 UI에 “공식 실시간 갱신 불가, 정적/캐시 사용 중”을 데이터 헬스에 명시
-* **우선순위:** **High**
+* 위치: `Claude.md` (Spec Kit 안내 블록, 프로젝트 이름 `lotto---webapp`) / `scripts/smoke/cases/regressions/ui/latestWin.mjs` (`runRecommendationCopyRegression`)
+* 문제: 활성 문서에 금지된 레거시 패턴 `lotto---webapp`이 포함되어 smoke가 AssertionError로 중단됨.
+* 영향: `npm run build` / `ci:verify` / 로컬 회귀 전체가 실패. 기능 코드와 무관하게 **배포 게이트 차단**.
+* 근거:
+  - 감사 시 `node scripts/smoke/smoke.mjs` 실행 →  
+    `legacy app/package names must not remain in active docs or metadata`  
+    (검사 대상에 `claudeSource` 포함, 패턴에 `lotto---webapp` 포함)
+  - `Claude.md` Spec Kit 섹션: `**프로젝트**: \`lotto---webapp\``
+* 권장 수정 방향:
+  - 문서에는 `lotto-pension-pro-webapp`만 사용하거나, Spec Kit 안내를 smoke 검사 제외 파일로 분리
+  - 폴더명 `lotto---webapp`과 제품 슬러그 불일치를 문서/회귀 정책에 명시
+* 우선순위: **High** (현재 재현되는 게이트 실패)
 
 ---
 
-### 3.2 로또 기본 자동 동기화의 서드파티 CORS 프록시 의존
+### H2. 정적 로또 데이터가 신선도 허용치를 초과
 
-* **위치:** `assets/modules/core/data/sync/providers.js` — `BUILTIN_SYNC_SINGLE_PROVIDERS`, `buildBuiltInSingleFetchUrls`
-* **문제:** 커스텀 Worker 프록시가 없을 때 공식 API 직접 호출(브라우저 CORS 실패) 후 `corsproxy.io`, `api.codetabs.com`으로 우회합니다. 이는 동행복권이 아닌 **제3자 인프라**에 당첨번호 요청이 노출됩니다.
-* **영향:**
-  - 프록시 장애/차단 시 `SYNC_NO_UPDATE_STALE`로 동기화 실패 (smoke `runAutoSyncFallbackRegression`이 이 경로 검증)
-  - 개인정보는 최소이나 **요청 메타데이터·회차 정보가 제3자에 전달**
-  - README “설정하지 않아도 기본 자동 동기화”와 사용자 기대 간 괴리
-* **근거:**
-
-```3:22:assets/modules/core/data/sync/providers.js
-const BUILTIN_SYNC_SINGLE_PROVIDERS = [
-    { label: '공식 API', buildUrl(targetUrl) { return targetUrl; } },
-    { label: 'corsproxy.io', buildUrl(targetUrl) {
-        return `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-    }},
-    { label: 'CodeTabs', buildUrl(targetUrl) {
-        return `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(targetUrl)}`;
-    }}
-];
-```
-
-* **권장 수정 방향:**
-  - README/설정 UI에 “기본 동기화 = 공식 API + 공개 CORS 중계 시도”를 명시
-  - 장기적으로 앱 기본 제공 Worker(또는 동행복권 허용 프록시)를 1차 경로로 승격
-  - 서드파티 프록시 응답 형식 변화 감지·사용자 경고 강화 (`SYNC_FETCH_ONE_INVALID_PAYLOAD` 활용)
-* **우선순위:** **High**
+* 위치: `data/winning_stats.json` / `scripts/check_static_data_freshness.mjs` / Claude.md baseline
+* 문제: 정적 최신 회차 `1232`, KST 추정 최신 `1234` → **2회차 지연**. 일반 freshness 허용은 1.
+* 영향:
+  - `npm run build`의 `check:data-freshness` 실패
+  - 오프라인·동기화 실패 사용자는 최신 회차 없이 생성/확인/추천
+  - 자동 sync가 성공하면 런타임 localUpdates로 보완 가능하나, **번들 자체는 stale**
+* 근거:
+  - `node scripts/check_static_data_freshness.mjs` →  
+    `static winning data is 2 draw(s) behind ... Allowed budget is 1.`
+  - `estimateLatestDrawKST()` = 1234, 파일 max draw = 1232
+* 권장 수정 방향:
+  - `npm run sync:lotto` (+ 필요 시 `sync:pension720`) 후 `sync:sw-manifest` / `sync:docs-data-baseline`
+  - CI `ci:data:refresh` 스케줄·defer 조건이 누적 delay를 만들지 않는지 점검
+* 우선순위: **High**
 
 ---
 
-### 3.3 URL 쿼리 파라미터로 데이터 연결 주소 우선 적용
+### H3. 브라우저 실시간 동기화가 서드파티 CORS 중계에 의존
 
-* **위치:** `assets/modules/core/data/persistence/proxy.js` — `getQueryProxyUrl`, `resolveProxyConfig`
-* **문제:** `?proxyUrl=` / `?proxy=`가 저장 설정보다 **우선** 적용됩니다. 검증은 `/proxy/latest` 형식만 허용하지만, 공유 링크·피싱 페이지로 악의적 프록시를 주입할 수 있습니다.
-* **영향:** 악의적 프록시가 조작된 당첨 데이터를 반환하면 당첨 확인·동기화 결과가 왜곡될 수 있습니다 (로컬 저장 데이터 자체는 직접 변조하지 않으나 **신뢰하는 최신 회차**가 오염될 수 있음).
-* **근거:**
-
-```85:106:assets/modules/core/data/persistence/proxy.js
-    getQueryProxyUrl() {
-        const params = new URLSearchParams(window.location.search);
-        const proxyUrl = (params.get('proxyUrl') || '').trim();
-        if (proxyUrl) return this.buildProxyConfig('URL 쿼리(proxyUrl)', proxyUrl);
-        // ...
-    },
-    resolveProxyConfig() {
-        const queryProxy = this.getQueryProxyUrl();
-        if (queryProxy) return queryProxy;
-        // saved settings는 그 다음
-```
-
-* **권장 수정 방향:**
-  - 쿼리 프록시 적용 시 **명시적 사용자 확인** 토스트/모달
-  - 또는 설정에서 “URL 파라미터 프록시 허용” 옵트인
-  - 적용된 프록시 호스트를 설정 패널에 항상 표시
-* **우선순위:** **Medium** (악용 시나리오는 있으나 `/proxy/latest` 검증으로 완화)
+* 위치:
+  - `assets/modules/core/data/sync/builtinProviders.js` (`BUILTIN_CORS_PROVIDERS`)
+  - `assets/modules/core/data/sync/providers.js` (`buildBuiltInSingleFetchUrls`)
+  - `assets/modules/core/data/pension720/remoteFetch.js` (`buildPension720RemoteFetchCandidates`)
+* 문제: 공식 동행복권 API는 브라우저 CORS로 직접 호출 불가. 커스텀 `/proxy/latest` 미설정 시 `corsproxy.io`, `CodeTabs`를 순차 시도.
+* 영향:
+  - 중계 장애/차단/속도 저하 시 “기본 자동 동기화” 실패
+  - 중계 응답 변조 시 **유효 형태**의 잘못된 당첨 번호가 통과할 수 있음 (`normalizeDrawItem`은 형태만 검증, 출처 진위성은 검증 불가)
+  - 개인정보·신뢰성 측면에서 README도 자체 Worker를 권장
+* 근거:
+  - `BUILTIN_CORS_PROVIDERS`에 공식 → corsproxy.io → CodeTabs 순서
+  - 연금복권도 `buildBuiltinCorsFetchUrls(PENSION720_OFFICIAL_LIST_URL)` 사용 (이전 대비 개선, 동일 의존 구조)
+* 권장 수정 방향:
+  - 기본 배포에 신뢰 가능한 자체 프록시(또는 Pages 호환 BFF) 기본값 제공
+  - 서드파티 경로 실패 시 UI에 “정적 데이터 유지 + 수동 동기화 안내”를 더 명확히
+  - 가능하면 응답 서명/해시 비교(공식 대비) 또는 multi-source majority 검증 **추정 개선안**
+* 우선순위: **High** (기능 가용성·데이터 무결성 구조 리스크)
 
 ---
 
-### 3.4 StrategyWorkerClient 동시 다중 요청 직렬화 부재
+### H4. 커스텀/쿼리 프록시는 형태만 검증 — 신뢰할 수 없는 프록시는 잘못된 “유효 회차”를 주입 가능
 
-* **위치:** `assets/modules/core/StrategyWorkerClient.js` — `post`, `postOnce`, `pending` Map
-* **문제:** `pending` Map은 요청 ID별 추적만 하고, **동시 GENERATE + RECOMMEND** 등 복수 워커 작업을 직렬화하지 않습니다. `resetWorker()`는 한 요청 타임아웃 시 워커 전체를 terminate하여 **다른 진행 중 요청도 함께 실패**할 수 있습니다.
-* **영향:** 사용자가 번호 생성·추천·백테스트를 빠르게 연속 실행하면 워커 재시작·타임아웃 연쇄, UI 일시 정지 가능. Ai/Generator는 `runToken`/`isRecommending`으로 UI 중복은 막지만 **워커 레벨 경합**은 남습니다.
-* **근거:**
-
-```201:232:assets/modules/core/StrategyWorkerClient.js
-    async post(type, payload, timeoutMs = null, retries = MAX_RETRY) {
-        // ...
-        if (isTimeout && attempt < retries) {
-            this.resetWorker();  // 전체 워커 terminate
-            attempt++;
-            continue;
-        }
-```
-
-  CodeGraph blast radius: `StrategyWorkerClient` — covering tests **없음** (smoke는 postMessage cleanup·cache-empty retry만 검증).
-
-* **권장 수정 방향:**
-  - 워커 요청 큐(단일 in-flight) 또는 타입별 세마포어
-  - `resetWorker` 전 다른 `pending` 요청에 취소/재시도 정책 명확화
-* **우선순위:** **Medium**
+* 위치: `assets/modules/core/data/persistence/proxy.js` (`validateCustomProxyUrl`, `resolveProxyConfig`, `ensureQueryProxyAcknowledged`)
+* 문제:
+  - 검증은 `http(s)` + path에 `/proxy/latest` 포함 여부 수준
+  - `?proxyUrl=` 은 세션 확인 대화상자가 있으나, 확인 시 해당 프록시가 동기화 우선 소스가 됨
+  - `UIManager.confirm`이 없으면 쿼리 프록시를 **자동 승인**하는 분기 존재
+* 영향: 사용자가 확인한 악성 프록시(또는 탈취된 설정)가 유효 형태의 로또 회차를 주입 → 당첨 확인/정산 왜곡
+* 근거:
+  - `validateCustomProxyUrl`: protocol + pathname includes `/proxy/latest`
+  - `ensureQueryProxyAcknowledged`: `if (typeof UIManager?.confirm !== 'function') return true;`
+  - `normalizeDrawItem`은 구조 검증만 수행
+* 권장 수정 방향:
+  - 허용 호스트 allowlist(옵션) 또는 자체 배포 Worker 도메인 고정 권장 UI
+  - confirm 미가용 시 **거부(fail-closed)**
+  - 가능하면 정적 최신 대비 급격한 점프/불연속 회차 경고
+* 우선순위: **High** (사용자 확인 전제 하의 데이터 무결성 리스크)
 
 ---
 
-### 3.5 import 가져오기 중복 실행 가능 (확인 대화상자 대기 구간)
+### H5. 크로스탭 동기화는 last-write-wins — 동시 편집 시 데이터 유실 가능
 
-* **위치:** `assets/modules/features/dataio/importFlow.js` — `importAll`
-* **문제:** `isImporting` 같은 in-flight 가드가 없습니다. 파일 선택 → `confirmPreparedImport` 대기 중 또 다른 import를 시작할 수 있습니다.
-* **영향:** 덮어쓰기 모드에서 백업·적용 순서가 꼬이거나, 상태가 예측 불가하게 병합될 수 있습니다 (확률은 낮으나 기능적으로 가능).
-* **근거:** `importAll`은 `file.size` 검증·`JSON.parse`·confirm 후 `applyPreparedImport`까지 async이나, 진행 중 플래그 없음. grep `isImporting` — **매칭 없음**.
-
-* **권장 수정 방향:** `importInFlight` 플래그 + 버튼/input disabled until `finally`
-* **우선순위:** **Low**
-
----
-
-### 3.6 localStorage 쿼터 초과 시 부분 저장 상태
-
-* **위치:** `assets/modules/core/data/persistence/storage.js` — `_safeSetItem`; `loadSave.js` — dirty tracking
-* **문제:** 키별 dirty write 실패 시 `markAllDirty`로 재시도는 하지만, **일부 키만 저장 성공**한 상태가 지속될 수 있습니다. 크로스탭 rehydrate는 flush 실패 시 원격 로드를 보류합니다 (양호).
-* **영향:** 대용량 티켓·캠페인 보유 사용자에서 저장 실패 후 탭 전환·새로고침 시 **일부 데이터만 반영**될 수 있음.
-* **근거:**
-
-```119:141:assets/modules/core/data/persistence/storage.js
-    _safeSetItem(key, value, options = {}) {
-        try {
-            localStorage.setItem(key, value);
-            return true;
-        } catch (e) {
-            if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-                UIManager.toast('저장 공간이 가득 찼습니다. 데이터를 정리해 주세요.', 'error');
-            }
-            return false;
-        }
-    }
-```
-
-  smoke: `storage dirty-retained-on-failure`, `remote rehydrate persistence-flush` PASS.
-
-* **권장 수정 방향:** 저장 실패 시 설정 패널·데이터 관리에 **영속 실패 배너** 상시 표시; 자동 백업 권고
-* **우선순위:** **Medium**
+* 위치:
+  - `assets/modules/core/data/persistence/storage/crossTab.js`
+  - `assets/modules/core/app/networkLifecycle/remoteSync.js` (`_rehydrateAfterRemotePersistenceSync`)
+* 문제: 탭 A/B가 각각 dirty 상태에서 저장하면 최종 localStorage 스냅샷이 이김. merge CRDT/필드 단위 병합 없음. remote rehydrate는 flush 후 전체 `load()`.
+* 영향: 두 탭에서 동시에 티켓/즐겨찾기 추가 시 한쪽 변경 유실 **가능**
+* 근거:
+  - `notifyCrossTabStateChange` → 상대 탭 `handleRemotePersistenceSync` → `flushPendingLocalPersistence` 후 `load()`
+  - 키 단위 브로드캐스트이나 값은 통째 교체
+* 권장 수정 방향:
+  - 충돌 감지(버전/타임스탬프) 후 “다른 탭 변경 덮어씀” 경고
+  - 티켓/히스토리는 id 기준 merge 재적용 검토
+* 우선순위: **Medium**
 
 ---
 
-### 3.7 동행복권 API 응답 래핑 형식 변화에 대한 런타임 취약성
+### H6. 번호 생성 경로는 당첨 데이터 공백 가드가 약함
 
-* **위치:** `assets/modules/core/data/sync/payload.js` — `parseSyncPayload`, `extractSingleDrawFromPayload`; `proxy/worker.js` — `getOneDraw`
-* **문제:** 정규화는 `ltEpsd`/`draw_no` 등 **듀얼 필드**를 지원하나, Worker 프록시는 `parsed?.data?.list[0]` 고정 구조에 의존합니다. 서드파티 CORS 프록시가 HTML/Markdown 래핑을 붙이면 `parseSyncPayload`의 휴리스틱에 의존합니다.
-* **영향:** 동행복권 또는 중계 서비스 응답 형식 변경 시 **단건/범위 동기화 전면 실패** 가능. CI `check:lotto:official`·`check:pension720:freshness`는 Node fetch로 조기 감지 가능.
-* **근거:** `parseSyncPayload`는 `Title:`/`Markdown Content:` 분리, `contents` 이중 파싱 등 방어 로직 존재. `proxy/worker.js` `getOneDraw`는 `data.list` 단일 경로.
+* 위치: `assets/modules/features/generator/actions/generate.js` (`generate`)
+* 문제: AI/당첨 확인은 `winningStats.length` 검사 후 중단. Generator `generate()`는 동일 가드 없이 워커/엔진 실행.
+* 영향: 데이터 없음·로드 실패 상태에서 생성 시도 시 의미 없는 결과 또는 내부 오류 가능. (라우트 gate는 stats/ai/bt만 full 요구; gen은 의도적으로 열림)
+* 근거:
+  - `ai/rendering/run/methods.js`: 데이터 없으면 toast 후 return
+  - `generator/actions/generate.js`: `winningStats` 길이 검사 없음 (grep 확인)
+  - Claude.md: partial 시 generation은 사용 가능하도록 설계
+* 권장 수정 방향:
+  - 완전 무데이터(`none`)일 때는 생성 차단 + 동기화 유도
+  - partial일 때는 경고 토스트(이미 stale 경고 패턴 있으면 재사용)
+* 우선순위: **Medium**
 
-* **권장 수정 방향:**
-  - Worker·클라이언트가 동일한 `extractSingleDrawFromPayload` 공유
-  - 공식 API 스키마 변경 시 smoke에 **fixture 기반 회귀** 추가
-* **우선순위:** **Medium**
+---
+
+### H7. 공식 API 후보를 브라우저에서 먼저 시도해 지연·노이즈 증가
+
+* 위치: `builtinProviders.js` — 첫 후보 label `'공식 API'`가 원 URL 그대로
+* 문제: 브라우저에서는 CORS로 거의 항상 실패하는 요청을 매 회차/목록 fetch 전에 수행
+* 영향: 동기화 지연, 콘솔 오류, 중계 시도 전 타임아웃 소모
+* 근거: `buildBuiltinCorsFetchUrls`가 제공자 배열 순서대로 반환; `fetchPension720OfficialRemote` / lotto single fetch가 순차 시도
+* 권장 수정 방향:
+  - 브라우저 환경에서는 공식 직행 스킵, 중계/커스텀 프록시만 시도
+  - 또는 환경 플래그로 분리
+* 우선순위: **Medium** (기능 오류라기보다 안정성/UX)
+
+---
+
+### H8. 연금복권 정적 데이터도 추정 대비 지연 (운영 리스크)
+
+* 위치: `data/pension720_stats.json` / `scripts/fetch_pension720_stats.mjs`
+* 문제: 정적 latest `323`, 추정 `325` (감사 시점)
+* 영향: 원격/캐시 실패 시 연금 탭이 2회차 늦은 스냅샷 사용. `check:pension720:freshness`는 온라인 비교 시 실패 가능
+* 근거: 파일 max draw 323, `estimateLatestPension720DrawKST()` 325
+* 권장 수정 방향: H2와 함께 `npm run sync:pension720` 및 CI refresh 점검
+* 우선순위: **Medium**
+
+---
+
+### L1. 전략 프리셋 import 시 request 내용 정규화가 느슨함 (실행 시 clamp로 완화)
+
+* 위치: `assets/modules/utils/backup/normalizers.js` (`normalizePreset`)
+* 문제: import 시 `request`를 `toObject`만 하고 strategy 스키마로 clamp하지 않음. 실행 경로 `StrategyEngine.normalizeRequest`에서 clamp됨.
+* 영향: 저장/표시 단계의 비정상 값 잔존 가능. 실제 연산 DoS 위험은 clamp로 **완화됨**.
+* 근거: `normalizePreset` vs `strategy/request.js` clamp 차이; `MAX_STRATEGY_REQUEST_BYTES`는 티켓 스냅샷 clone 경로에서 사용
+* 권장 수정 방향: import 시점에 `normalizeRequest`/`normalizeStrategyRequestSnapshot` 적용
+* 우선순위: **Low**
+
+---
+
+### L2. 파괴적 백업의 “다운로드 확인”은 사용자 확인에 의존
+
+* 위치: `assets/modules/features/dataio/backupExport/destructive.js`
+* 문제: File System Access 실패 시 download + confirm. 사용자가 다운로드 실패를 모르고 확인하면 덮어쓰기 진행 가능.
+* 영향: 실수 시 복구 포인트 없는 overwrite
+* 근거: `downloaded` 후 confirm 텍스트가 “다운로드 목록 확인” 요청; 실제 파일 존재 검증 없음
+* 권장 수정 방향: 가능하면 file picker 강제, 또는 두 단계 confirm
+* 우선순위: **Low** (의도된 UX 트레이드오프에 가까움)
 
 ---
 
 ## 4. Potential Functional Gaps
 
-### 확인된 갭 (코드/문서 근거 있음)
+아래는 **확정 버그가 아닌** 보완 후보입니다. 불확실하면 **추정**으로 표시합니다.
 
-| 갭 | 설명 |
-|----|------|
-| 연금720+ 브라우저 실시간 공식 동기화 | 로또 대비 프록시·폴백 체인 부재 (§3.1) |
-| 기본 로또 동기화의 제3자 의존 | 사용자 문서에 투명하게 설명되지 않음 (§3.2) |
-| 기기 간 자동 동기화 | README FAQ에서 명시적으로 미지원 — 의도된 제한 |
-| `importAll` 진행 중 재진입 가드 | 없음 (§3.5) |
-
-### 추정 갭
-
-| 갭 | 설명 |
-|----|------|
-| **추정:** 동행복권 rate limit | `FALLBACK_FETCH_CONCURRENCY=3`, proxy `RANGE_CONCURRENCY=4`로 대량 누락 회차 보정 시 공식/중계 차단 가능. 장기 미사용 후 첫 동기화에서 간헐 실패 가능. |
-| **추정:** iOS Safari PWA localStorage 상한 | `_checkStorageQuotaWarning` 존재하나 iOS WebKit 특유의 조기 eviction 시 사용자 안내 부족 가능. |
-| **추정:** 추첨 직후~공식 게시 전 “estimated latest” 구간 | `estimateLatestDrawKST` 기반 추정과 공식 미게시 시 `defer` 로직은 CI에 있으나, 브라우저 UI에서 “아직 미발표”와 “동기화 실패” 구분이 사용자에게 모호할 수 있음. |
-| **추정:** 연금720+ 당첨 확인의 대상 회차 자동 선택 | README는 “대상 회차 우선·최신 fallback”을 설명. 구현은 `pension720/checks.js`에 있으나, 정적 데이터가 오래된 경우 UX 혼란 가능. |
-
-### 잘 구현된 방어 (감사에서 긍정 확인)
-
-- 로또 동기화 in-flight dedup·abort·proxy fingerprint 변경 시 재시작 (`orchestrator.js` `fetchLatestFromAPI`)
-- 크로스탭 `flushPendingLocalPersistence` → `load` 순서 (`networkLifecycle.js`, smoke PASS)
-- import 덮어쓰기 전 자동 백업 + 확인 (`importFlow.js`, `backupExport.js`)
-- 백업/티켓/연금 정규화·한도 (`backup.js`, `CONFIG.LIMITS`)
-- CSV 수식 injection 방지 (smoke `pension720 CSV formula escape`)
-- QR 호스트 화이트리스트 (`QrScanner.parseLottoQr`)
-- 라우트 `routeToken` stale 방지 (`moduleLoader/routing.js`)
-- Ai/Generator/Pension720 `runToken`·`isRecommending` UI 중복 방지
+| 항목 | 설명 | 구분 |
+|------|------|------|
+| 기기 간 동기화 | README도 “미지원, 파일 백업” 명시. 사용자 요청 많으면 cloud export 옵션 | 제품 범위 / 추정 수요 |
+| 연금 partial health | 연금은 availability가 사실상 full/none. 목록 일부만 성공한 경우 세분 상태 부재 **추정** | 추정 |
+| 생성 결과 워커 vs 메인 폴백 재현성 | 워커 실패 시 메인 스레드 폴백; seed가 있으면 재현 의도. 타임아웃 경계에서 사용자 혼동 가능 | 추정 |
+| 백테스트 장시간 실행 UX | span 300·다전략 비교 시 모바일에서 체감 지연. 취소/우선순위 큐 보강 여지 | 추정 |
+| Spec Kit 기능 명세 | `.specify/`만 있고 `specs/` 활성 기능 없음. 신규 기능 추적용 명세 부재 | 문서/프로세스 |
+| 저장소 폴더명 vs 제품 슬러그 | 워크스페이스 `lotto---webapp` vs package `lotto-pension-pro-webapp` — 문서/스모크 혼선 원인 | 운영 |
+| 오프라인 “전체 기능” 기대 | PWA 오프라인은 저장 데이터+정적 스냅샷 중심. 실시간 최신 회차는 불가 | 문서와 대체로 일치 |
+| 다국어/접근성 | 한국어 고정. a11y는 일부 aria 사용, 전체 감사 범위 밖 | 추정 |
+| 공식 결과 수동 입력 | localUpdates는 sync로 쌓임. 사용자 수동 회차 입력 UI는 제한적일 수 있음 **추정** | 추정 |
 
 ---
 
 ## 5. Recommended Fix Plan
 
-### 1단계 — 즉시 (기능 신뢰도·사용자 피해 방지)
+### 1단계 — 즉시 (게이트·데이터)
 
-1. **연금720+ 런타임 공식 갱신 경로 추가** — Worker 프록시 또는 검증된 CORS 폴백을 로또와 대칭 구현 (§3.1)
-2. **README/설정 UI 문구 정정** — “기본 자동 동기화”가 서드파티 CORS 중계에 의존할 수 있음을 명시; Cloudflare Worker 배포 권장 강조 (§3.2)
-3. **URL 쿼리 프록시 적용 시 사용자 확인** (§3.3)
+1. **Smoke 통과**: `Claude.md` 등 활성 문서에서 `lotto---webapp` / 레거시 브랜드 문자열 제거 또는 정책 조정 후 `node scripts/smoke/smoke.mjs`
+2. **데이터 갱신**: `npm run sync:lotto`, `npm run sync:pension720`, `npm run sync:sw-manifest`, `npm run sync:docs-data-baseline`
+3. **신선도 재확인**: `npm run check:data-freshness` (+ release 시 strict/official)
+4. **프록시 confirm fail-closed**: `UIManager.confirm` 부재 시 쿼리 프록시 거부
 
-### 2단계 — 안정성 개선
+### 2단계 — 안정성
 
-4. `StrategyWorkerClient` 요청 큐·워커 reset 시 pending 정리 (§3.4)
-5. `importAll` in-flight 가드 (§3.5)
-6. localStorage 저장 실패 **지속 배너** + 데이터 관리 탭 연동 (§3.6)
-7. Worker·클라이언트 payload 추출 로직 통합 및 공식 API fixture 회귀 (§3.7)
+1. 브라우저에서 공식 API 직행 스킵 → CORS 중계/커스텀 프록시만
+2. Generator: `dataHealth.availability === 'none'` 시 생성 차단
+3. 동기화 실패 UX: 서드파티 중계 실패를 사용자 언어로 구분 표시
+4. 크로스탭: 원격 rehydrate 시 dirty 충돌 경고
+5. 기본 제공 가능한 프록시 배포 문서/원클릭 강화 (`proxy/README.md` 연계)
 
-### 3단계 — 구조 개선
+### 3단계 — 구조
 
-8. 연금720+·로또 공통 **DataSource 추상화** (static / official_cache / proxy / third_party)
-9. 동기화·공식 fetch **가용성 메트릭**을 설정 패널에 노출 (마지막 성공 소스, 실패 사유)
-10. 브라우저 Playwright canary를 CI 필수 게이트에 더 가깝게 통합 (`test:sync-live:browser:official`)
+1. 자체 프록시를 기본 경로로 두고 서드파티 CORS를 opt-in 또는 최후 수단으로
+2. 회차 데이터 다중 소스 교차 검증(동일 draw 불일치 시 폐기)
+3. 티켓/캠페인 필드 단위 merge 또는 버전 벡터
+4. Spec Kit으로 동기화/영속화 계약 명세화 (`specs/`)
+5. 저장소 디렉터리명과 제품 슬러그 정렬(외부 rename 포함)
 
 ---
 
 ## 6. Test Recommendations
 
-현재 smoke **130건+ PASS**로 정규화·동기화 가드·import·PWA·innerHTML 감사가 잘 갖춰져 있습니다. 아래는 **추가·보강** 권장입니다.
+### 6.1 지금 깨진 게이트 (필수)
 
-### 6.1 동행복권 / 프록시 연동
-
-| 테스트 | 내용 |
+| 테스트 | 목적 |
 |--------|------|
-| `pension720-browser-official-fetch-fallback` | 브라우저 환경 mock에서 CORS `TypeError` 시 static+cache 유지, `dataHealth.source` 메시지 검증 |
-| `pension720-proxy-parity` | (구현 후) Worker `/proxy/pension720` 응답이 `normalizePension720Draw`와 일치 |
-| `third-party-proxy-shape-regression` | corsproxy/CodeTabs가 Markdown/HTML 래핑 응답을 줄 때 `parseSyncPayload` 성공/실패 케이스 |
-| `official-api-field-alias` | `ltEpsd` vs `draw_no`, `psltEpsd` vs `draw_no` 혼합 fixture |
+| `node scripts/smoke/smoke.mjs` | 레거시 브랜드·DOM·정규화 회귀 전체 |
+| `npm run check:data-freshness` | 정적 로또 ≤1회차 지연 |
+| `npm run check:pension720:freshness` | 연금 정적 vs 공식 |
+| `npm run check:docs-data-baseline` | Claude/README baseline 동기화 |
 
-### 6.2 비동기 / race condition
+### 6.2 추가·보강 권장 테스트
 
-| 테스트 | 내용 |
-|--------|------|
-| `strategy-worker-concurrent-generate-recommend` | GENERATE 진행 중 RECOMMEND 시 한쪽 취소/완료 정책 검증 |
-| `import-all-double-submit` | confirm 대기 중 두 번째 `importAll` 호출 차단 |
-| `auto-sync-during-manual-sync` | 동일 proxy fingerprint에서 promise 공유, 다른 fingerprint에서 abort 후 재시작 (smoke 일부 존재 — 브라우저 E2E 보강) |
+| 시나리오 | 유형 | 이유 |
+|----------|------|------|
+| 문서 레거시 슬러그 전용 단위 검사 | smoke | H1 재발 방지 (Spec Kit 블록 포함 여부 정책 명시) |
+| 브라우저 환경에서 공식 URL 직행이 후보에서 제외되는지 | unit | H7 |
+| `?proxyUrl=` + confirm 취소/승인/confirm 미구현 | unit/integration | H4 |
+| 악성 형태 페이로드 vs **유효 형태 위조 회차** | unit | 전자는 이미 있음; 후자는 “수용됨”을 문서화하거나 multi-source 시 폐기 테스트 |
+| 탭 2개 동시 `addTicket` 후 최종 개수 | browser | H5 |
+| Generator + `winningStats=[]` | unit | H6 |
+| 서드파티 CORS 전 실패 시 pension720/lotto가 static 유지 | unit | H3 회귀 |
+| 데이터 2회차 지연 상태에서 build 실패 메시지 | script | H2 운영 가시성 |
+| import 프리셋에 `simulationCount: 1e9` 후 실행 clamp | unit | L1 |
+| overwrite + download confirm 취소 | smoke | 파괴 경로 안전 |
 
-### 6.3 보안 / 입력
+### 6.3 기존 강점 유지 (회귀 삭제 금지)
 
-| 테스트 | 내용 |
-|--------|------|
-| `query-proxy-confirmation` | `?proxyUrl=` 적용 시 확인 UI 필요 (구현 후) |
-| `malicious-proxy-tampered-draw` | 조작 JSON 반환 프록시에서 `normalizeDrawItem` 거부·경고 |
-
-### 6.4 영속화 / OS 호환
-
-| 테스트 | 내용 |
-|--------|------|
-| `localStorage-partial-failure-ui` | 일부 키만 `_safeSetItem` 실패 시 dirty·배너 상태 |
-| `import-32mb-near-limit-memory` | 32MB 근접 JSON parse·preview 성능 (Node smoke 확장) |
-
-### 6.5 문서 / CI 정합
-
-| 테스트 | 내용 |
-|--------|------|
-| 기존 `check:docs-data-baseline` 유지 | README·Claude.md 최신 회차와 `data/*.json` 동기 |
-| `npm run test:sync-live:browser:official` | 릴리스 전 수동·주간 canary (이미 workflow 존재) — 연금720+ 경로 추가 권장 |
+- Strategy worker: timeout terminate, cache-empty retry, postMessage cleanup
+- SW data network-first + error-status fallback
+- Pension720 CSV formula escape
+- Persistence flush on pagehide/visibility
+- Partial winning stats recovery / preserve-existing on static failure
+- Query proxy acknowledge (존재 자체는 유지, fail-closed만 강화)
 
 ---
 
-## 부록: 검증 실행 기록
+## 7. Docs vs Implementation 대조
 
-| 명령 | 결과 |
-|------|------|
-| `node scripts/smoke/smoke.mjs` | **PASS** (전체 회귀, 2026-07-02 실행) |
-| CodeGraph MCP | 엔트리·동기화·import·워커·라우팅 호출 관계 분석 완료 |
+| 문서 주장 | 구현 상태 | 판정 |
+|-----------|-----------|------|
+| 엔트리 `index.html` → `index.js` → `LottoApp` | 일치 | OK |
+| `CACHE_VERSION` v31, worker asset v23 | `sw.js` / strategyWorker config 일치 | OK |
+| 로또 latest 1232 / rows 1231 / missing 146 | 파일 일치, 단 **추정 1234 대비 stale** | 문서 자체 일치, 운영 stale |
+| 연금 latest 323 | 파일 일치, 추정 325 대비 stale | 동일 |
+| 백업 v5, 32MB import, before_replace 접두 | importFlow / CONFIG 일치 | OK |
+| `?proxyUrl=` 세션 1회 확인 | `ensureQueryProxyAcknowledged` 존재 | OK (confirm 미구현 시 예외) |
+| 기본 자동 동기화(공개 CORS 중계) | builtinProviders 일치 | OK, 가용성은 외부 의존 |
+| 연금도 프록시/중계 경로 | remoteFetch candidates 일치 | OK (과거 “공식만”보다 개선) |
+| partial 시 stats/추천/백테스트 게이트, gen/check/data 유지 | dataHealthGate `stats/ai/bt` only | OK |
+| Claude.md Spec Kit `lotto---webapp` | smoke 금지 패턴과 **충돌** | **불일치/게이트 실패** |
+| README “정기 백업 권장” | localStorage only | OK |
 
 ---
 
-## 7. Implementation Status (2026-07-02)
+## 8. Verification Snapshot (감사 시점)
 
-감사 권장 수정안 1~3단계 및 §6 핵심 회귀 테스트를 코드에 반영했습니다.
+```text
+estimateLatestDrawKST()           = 1234
+winning_stats.json max draw       = 1232  (behind 2)  → check:data-freshness FAIL
+estimateLatestPension720DrawKST() = 325
+pension720_stats.json max draw    = 323  (behind 2)
+node scripts/smoke/smoke.mjs      → FAIL (legacy brand in Claude.md Spec Kit block)
+CACHE_VERSION                     = v31
+STRATEGY_WORKER_ASSET_VERSION     = v23
+```
 
-| 권장 항목 | 상태 | 주요 변경 |
-|-----------|------|-----------|
-| §3.1 연금720 공식 갱신 경로 | ✅ | `remoteFetch.js`, `builtinProviders.js`, Worker `/proxy/pension720/list` |
-| §3.2 서드파티 CORS 안내 | ✅ | `README.md`, `index.html`, `settingsPanel.js` |
-| §3.3 URL 쿼리 프록시 확인 | ✅ | `proxy.js` `ensureQueryProxyAcknowledged()` |
-| §3.4 워커 요청 직렬화 | ✅ | `StrategyWorkerClient._dispatchChain` |
-| §3.5 import in-flight 가드 | ✅ | `DataIO.js`, `importFlow.js` |
-| §3.6 저장 실패 배너 | ✅ | `storageFailureBanner`, `networkLifecycle.js` |
-| §3.7 payload 추출 통합 | ✅ | `sync/lottoPayloadCore.js` — 클라이언트·Worker 공유 |
-| 3단계 DataSource 추상화 | ✅ | `data/dataSource.js` |
-| 3단계 가용성 메트릭 | ✅ | `syncMeta.pension720`, 설정 패널 연금 메트릭 |
-| 3단계 Playwright canary | ✅ | `live_data_source_playwright.mjs` 연금720·syncMeta 검증 |
-| §6 audit 회귀 | ✅ | `regressions/auditFixes.mjs` 12건 |
+---
 
-**검증:** `node scripts/smoke/smoke.mjs` PASS · `npm run lint` PASS · `npm run build:release` PASS
+## 9. Session Handoff (감사 결과)
 
-**PWA:** `CACHE_VERSION` `v31`
+- Goal: 기능 구현 관점 프로젝트 감사 리포트 작성
+- Changed surfaces: `PROJECT_AUDIT.md` only (코드 변경 없음)
+- Data/storage impact: 없음 (관찰만)
+- PWA/cache impact: 없음
+- Verification completed:
+  - README.md / Claude.md 열람
+  - CodeGraph MCP 다중 explore (init, persistence, proxy, sync, worker, import, SW, pension720)
+  - 정적 데이터·estimate draw 확인
+  - smoke / data-freshness 실행 (둘 다 실패 재현)
+- Remaining risks: H1–H4 우선 조치 전 `build`/`release` 비권장
 
-**남은 선택 과제:** import 32MB 근접 성능 smoke, 브라우저 CORS mock 전용 E2E, 악의적 프록시 full Playwright E2E
+---
 
-*초기 감사 본문은 2026-07-02 기준 스냅샷입니다. 추정 항목은 본문에서 “추정”으로 표기했습니다.*
+*End of audit report.*

@@ -5,6 +5,15 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         <meta name="description" content="로또 6/45와 연금복권720+ 통계 기반 번호 추천을 지원하는 웹앱" />
         <meta name="theme-color" content="#0f172a" />
+        <!--
+          Progressive CSP for the static SPA.
+          connect-src allows https: so advanced custom proxy workers remain usable.
+          Tighten further when a fixed Worker origin is always deployed.
+        -->
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https:; worker-src 'self' blob:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+        />
         <title>로또·연금복권 프로</title>
         <link rel="icon" type="image/png" href="assets/icons/icon-192.png" />
         <link
@@ -275,7 +284,7 @@
                                             <option value="precise">정밀 · 12,000샘플 / 최근 40회</option>
                                             <option value="custom">직접 설정</option>
                                         </select>
-                                        <p class="field-help">처음이면 기본값을 추천합니다.</p>
+                                        <p class="field-help">처음이면 기본값을 추천합니다. 모바일에서는 더 가벼운 「빠름」으로 시작할 수 있습니다.</p>
                                     </div>
                                 </div>
                                 <details class="advanced-settings">

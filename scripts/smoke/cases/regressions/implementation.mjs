@@ -484,8 +484,8 @@ async function runRemoteRehydrateFlushesPendingPersistenceRegression() {
         UIManager.toast = previousToast;
 
         assert.ok(
-            toastMessages.some((message) => message.includes('다른 탭에서 저장한 데이터를 반영했습니다')),
-            'remote rehydrate must notify the user after applying cross-tab storage changes'
+            toastMessages.some((message) => message.includes('다른 탭 변경과 로컬 미저장 변경이 겹쳤습니다')),
+            'remote rehydrate with pending local dirty must warn about possible overwrite'
         );
 
         assert.deepEqual(
@@ -512,7 +512,18 @@ async function runRemoteRehydrateFlushesPendingPersistenceRegression() {
         blockedApp.applyTheme = () => blockedOrder.push('theme');
         blockedApp.refreshCurrentRoute = async () => blockedOrder.push('route');
 
+        const blockedToasts = [];
+        const previousBlockedToast = UIManager.toast;
+        UIManager.toast = (message) => {
+            blockedToasts.push(String(message || ''));
+        };
         await blockedApp._rehydrateAfterRemotePersistenceSync([CONFIG.KEYS.SETTINGS]);
+        UIManager.toast = previousBlockedToast;
+
+        assert.ok(
+            blockedToasts.some((message) => message.includes('로컬 저장 실패')),
+            'failed flush during remote rehydrate must surface a storage failure warning'
+        );
 
         assert.deepEqual(
             blockedOrder,
@@ -669,6 +680,20 @@ async function runPwaCacheHealthRegression() {
     assert.match(swSource, /lastPrecacheHealth/, 'SW must retain the last precache health payload');
     assert.match(pwaSource, /_refreshPwaCacheHealth/, 'settings code must fetch cache health');
     assert.match(indexSource, /id="pwaCacheBadge"/, 'settings modal must render cache health badge');
+    assert.match(pwaCacheHealthSource, /기본 캐시 준비 완료|cacheOk/, 'cache health UI copy must be Korean-facing');
+    assert.doesNotMatch(
+        pwaCacheHealthSource,
+        /precache completed|Cache health will be checked/,
+        'cache health UI must not keep English-only status strings'
+    );
+
+    const pwaBootstrap = await readFile(resolve(process.cwd(), 'assets/modules/bootstrap/pwa.js'), 'utf8');
+    assert.match(
+        pwaBootstrap,
+        /flushPendingLocalPersistence|flushAppPersistenceBestEffort/,
+        'PWA update apply path must flush pending persistence before reload'
+    );
+    assert.match(pwaBootstrap, /hasPendingAppPersistence|hasPendingLocalPersistence/, 'PWA update path must inspect dirty state');
 }
 
 export {

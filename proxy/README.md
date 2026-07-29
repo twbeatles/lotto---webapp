@@ -18,10 +18,32 @@ Cloudflare Worker 예시가 포함되어 있습니다.
 
 1. Wrangler를 설치합니다.
 2. 특정 공식 주소를 노출하려면 `LOTTO_PROXY_URL` 비밀값을 설정합니다.
-3. `worker.js`를 배포합니다.
+3. (권장) `CORS_ALLOWED_ORIGINS` 환경 변수에 앱 오리진을 콤마로 넣어 Origin을 제한합니다.
+4. (권장) Cloudflare 대시보드에서 **Rate limiting** / WAF 규칙을 Worker 경로에 추가합니다.
+5. `worker.js`를 배포합니다.
 
 ```bash
 wrangler deploy proxy/worker.js
+```
+
+### 보안·남용 방지 (권장)
+
+| 항목 | 권장 |
+|------|------|
+| CORS | 기본은 `*`(호환). 운영 시 `CORS_ALLOWED_ORIGINS=https://twbeatles.github.io` 처럼 앱 오리진만 허용 |
+| Rate limit | Cloudflare Rate limiting으로 `/proxy/*` 분당 요청 상한 설정 |
+| `?url=` 패스스루 | `www.dhlottery.co.kr` 호스트만 허용, 경로는 `/lt645/`, `/pt720/` 접두만 허용 |
+| 미래 회차 | 예상 최신 `+1` 초과 요청은 upstream 호출 없이 `400` |
+
+`wrangler.toml` 예시:
+
+```toml
+name = "lotto-proxy"
+main = "proxy/worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+CORS_ALLOWED_ORIGINS = "https://twbeatles.github.io"
 ```
 
 ## 조회 예시
@@ -55,6 +77,9 @@ wrangler deploy proxy/worker.js
 - 2버전 설정 키: `lotto_pro_settings_v2.customProxy`
 - 해석 우선순위: `query` > `v1` > `v2`
 - 고급 데이터 연결 주소가 없으면 앱은 기본 자동 동기화 fallback을 사용합니다.
+- 브라우저에서는 동행복권 공식 API를 직접 호출하지 않습니다(CORS). 기본 자동 동기화는 `corsproxy.io`·`CodeTabs` 등 공개 CORS 중계를 경유할 수 있으며, 가용성이 외부 서비스에 좌우됩니다.
+- 안정적인 동기화를 위해 자체 Worker 배포 후 `설정 > 데이터 연결 주소(고급)`에 `/proxy/latest` URL을 저장하는 것을 **권장**합니다.
+- URL 쿼리 `?proxyUrl=` / `?proxy=` 는 사용자 확인 대화상자 없이는 적용되지 않습니다(확인 UI 불가 시 무시).
 - 고급 데이터 연결 주소가 있어도 공식 지원 형식(`/proxy/latest`)일 때만 우선 사용하고, 내장 fallback보다 먼저 시도합니다.
 - 비지원 연결 주소 형식은 설정 경고를 표시한 뒤 기본 자동 동기화로 내려갑니다.
 - 앱 UI 경로:

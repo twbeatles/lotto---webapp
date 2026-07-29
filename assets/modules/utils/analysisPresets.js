@@ -16,8 +16,42 @@ export const ANALYSIS_PRESETS = {
     }
 };
 
+/** Coarse pointer / narrow viewport clients prefer lighter analysis defaults. */
+export function isConstrainedClient() {
+    if (typeof window === 'undefined') return false;
+    try {
+        if (typeof navigator !== 'undefined' && Number(navigator.hardwareConcurrency) > 0 && navigator.hardwareConcurrency <= 4) {
+            if (window.matchMedia?.('(max-width: 900px)')?.matches) return true;
+        }
+        if (window.matchMedia?.('(pointer: coarse)')?.matches) return true;
+        if (window.matchMedia?.('(max-width: 768px)')?.matches) return true;
+    } catch (_e) {
+        return false;
+    }
+    return false;
+}
+
+export function getDefaultAnalysisPresetId() {
+    return isConstrainedClient() ? 'fast' : 'basic';
+}
+
 export function getAnalysisPreset(id = 'basic') {
     return ANALYSIS_PRESETS[id] || ANALYSIS_PRESETS.basic;
+}
+
+/**
+ * On phones / coarse pointers, switch stock "basic" defaults to "fast" unless the user already customized.
+ * @returns {string|null} applied preset id, or null when unchanged
+ */
+export function preferConstrainedClientAnalysisDefaults(prefix) {
+    if (typeof document === 'undefined' || !isConstrainedClient()) return null;
+    const simulation = Number(document.getElementById(`${prefix}SimulationCount`)?.value || 0);
+    const lookback = Number(document.getElementById(`${prefix}LookbackWindow`)?.value || 0);
+    const basic = ANALYSIS_PRESETS.basic;
+    const atStockBasic = simulation === basic.simulationCount && lookback === basic.lookbackWindow;
+    if (!atStockBasic) return null;
+    applyAnalysisPresetToFields(prefix, 'fast');
+    return 'fast';
 }
 
 export function applyAnalysisPresetToFields(prefix, presetId = 'basic') {

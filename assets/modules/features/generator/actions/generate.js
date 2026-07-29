@@ -27,6 +27,11 @@ export const generatorActionGenerateMethods = {
         this.isGenerating = true;
         this.syncBusyButtons?.();
         try {
+            if (!Array.isArray(this.data.state.winningStats) || !this.data.state.winningStats.length) {
+                UIManager.toast(uiStrings.dataUnavailable || '당첨 데이터가 없습니다. 데이터 파일을 확인해주세요.', 'error', 3000);
+                return false;
+            }
+
             const fixed = this.parseInput($('#fixedNums').value);
             const exclude = this.parseInput($('#excludeNums').value);
 

@@ -348,6 +348,28 @@ async function runLiveRegionAccessibilityRegression() {
 
         assert.match(indexSource, pattern, `${id} must expose live and busy attributes`);
     });
+
+    assert.match(
+        indexSource,
+        /id="pension720Output"[\s\S]*?aria-live="polite"/,
+        'pension720 output must expose a polite live region'
+    );
+    assert.match(
+        indexSource,
+        /id="dataStatusSummary"[\s\S]*?aria-live="polite"/,
+        'data status summary must expose a polite live region'
+    );
+    assert.match(
+        indexSource,
+        /id="toast-live-region"[\s\S]*?aria-live="polite"/,
+        'toast live region must remain for screen readers'
+    );
+    assert.match(indexSource, /role="dialog"[\s\S]*?aria-modal="true"/, 'settings dialog must declare modal semantics');
+
+    const modalSource = await readFile(resolve(process.cwd(), 'assets/modules/core/ui/modal.js'), 'utf8');
+    assert.match(modalSource, /_trapFocus/, 'modal helper must trap Tab focus');
+    assert.match(modalSource, /Escape/, 'modal helper must handle Escape to close');
+    assert.match(modalSource, /previousFocus/, 'modal helper must restore previous focus on close');
 }
 
 export {

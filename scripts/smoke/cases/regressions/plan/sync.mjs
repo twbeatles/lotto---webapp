@@ -88,6 +88,15 @@ const syncPlan = [
         awaited: true
     },
     {
+        name: 'runProxyWorkerUrlPassthroughPathAllowlistRegression',
+        label: 'proxy worker url passthrough path allowlist regression',
+        awaited: true
+    },
+    {
+        name: 'runProxyWorkerCorsOriginAllowlistRegression',
+        label: 'proxy worker cors origin allowlist regression'
+    },
+    {
         name: 'runLottoOfficialFreshnessComparisonRegression',
         label: 'lotto official freshness comparison regression'
     },

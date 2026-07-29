@@ -13,11 +13,49 @@ const TTL_HISTORICAL_SECONDS = 6 * 60 * 60;
 const TTL_HISTORICAL_RANGE_SECONDS = 12 * 60 * 60;
 export const MAX_FUTURE_DRAW_SLACK = 1;
 
-const CORS = {
+/** Official lottery path prefixes allowed for `?url=` passthrough. */
+export const ALLOWED_DHLOTTERY_PATH_PREFIXES = ['/lt645/', '/pt720/'];
+
+const DEFAULT_CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type'
 };
+
+/** Request-scoped CORS headers (set at the start of each fetch). */
+let activeCors = { ...DEFAULT_CORS };
+
+/**
+ * Resolve CORS headers from optional Worker env `CORS_ALLOWED_ORIGINS`
+ * (comma-separated origin list). Empty / missing keeps `*` for backward compatibility.
+ */
+export function resolveCorsHeaders(request, env = {}) {
+    const configured = String(env?.CORS_ALLOWED_ORIGINS || env?.ALLOWED_ORIGINS || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    const base = {
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    };
+    if (!configured.length || configured.includes('*')) {
+        return { ...base, 'Access-Control-Allow-Origin': '*' };
+    }
+    const origin = request?.headers?.get?.('Origin') || '';
+    if (origin && configured.includes(origin)) {
+        return { ...base, 'Access-Control-Allow-Origin': origin, Vary: 'Origin' };
+    }
+    if (!origin) {
+        return { ...base, 'Access-Control-Allow-Origin': configured[0], Vary: 'Origin' };
+    }
+    // Disallowed browser origin: omit ACAO so the browser blocks the response body.
+    return { ...base, Vary: 'Origin' };
+}
+
+export function isAllowedDhlotteryProxyPath(pathname = '') {
+    const path = String(pathname || '');
+    return ALLOWED_DHLOTTERY_PATH_PREFIXES.some((prefix) => path.startsWith(prefix) || path.includes(prefix));
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -27,7 +65,7 @@ const toJsonResponse = (body, init = {}) => {
         ...init,
         headers: {
             'content-type': 'application/json; charset=utf-8',
-            ...CORS,
+            ...activeCors,
             ...(init.headers || {})
         }
     });
@@ -35,7 +73,7 @@ const toJsonResponse = (body, init = {}) => {
 
 const withCacheMeta = (response, ttlSeconds, cacheState) => {
     const headers = new Headers(response.headers);
-    Object.entries(CORS).forEach(([key, value]) => headers.set(key, value));
+    Object.entries(activeCors).forEach(([key, value]) => headers.set(key, value));
     if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
         headers.set('Cache-Control', `public, max-age=${ttlSeconds}`);
     }
@@ -227,11 +265,28 @@ const resolveRangeTtl = (to) => (isNearLatestDraw(to) ? TTL_NEAR_LATEST_SECONDS 
 export { estimateLatestDrawKST };
 
 export default {
-    async fetch(request) {
+    async fetch(request, env = {}) {
+        activeCors = resolveCorsHeaders(request, env);
         const url = new URL(request.url);
 
         if (request.method === 'OPTIONS') {
-            return toJsonResponse('{}', { headers: { ...CORS, 'X-Lotto-Cache': 'BYPASS' } });
+            const origin = request.headers?.get?.('Origin') || '';
+            const configured = String(env?.CORS_ALLOWED_ORIGINS || env?.ALLOWED_ORIGINS || '')
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean);
+            if (
+                configured.length &&
+                !configured.includes('*') &&
+                origin &&
+                !configured.includes(origin)
+            ) {
+                return toJsonResponse(
+                    { error: 'Origin not allowed' },
+                    { status: 403, headers: { 'X-Lotto-Cache': 'BYPASS' } }
+                );
+            }
+            return toJsonResponse('{}', { headers: { ...activeCors, 'X-Lotto-Cache': 'BYPASS' } });
         }
 
         // Support ?url= parameter (AllOrigins-style passthrough)
@@ -242,6 +297,15 @@ export default {
                 if (targetUrl.hostname !== 'www.dhlottery.co.kr') {
                     return toJsonResponse(
                         { error: 'Forbidden domain' },
+                        {
+                            status: 403,
+                            headers: { 'X-Lotto-Cache': 'BYPASS' }
+                        }
+                    );
+                }
+                if (!isAllowedDhlotteryProxyPath(targetUrl.pathname)) {
+                    return toJsonResponse(
+                        { error: 'Forbidden path', allowedPathPrefixes: ALLOWED_DHLOTTERY_PATH_PREFIXES },
                         {
                             status: 403,
                             headers: { 'X-Lotto-Cache': 'BYPASS' }

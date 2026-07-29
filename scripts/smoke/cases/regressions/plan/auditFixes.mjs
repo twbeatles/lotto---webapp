@@ -8,6 +8,11 @@ const auditFixesPlan = [
         label: 'query proxy acknowledgement regression'
     },
     {
+        name: 'runQueryProxyConfirmFailClosedRegression',
+        label: 'query proxy confirm fail-closed regression',
+        awaited: true
+    },
+    {
         name: 'runImportInFlightGuardRegression',
         label: 'import in-flight guard regression',
         awaited: true

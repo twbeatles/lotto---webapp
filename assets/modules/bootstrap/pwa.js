@@ -1,5 +1,28 @@
 const SW_UPDATE_CHANNEL = 'lotto-sw-update';
 
+function flushAppPersistenceBestEffort() {
+    try {
+        const data = typeof window !== 'undefined' ? window.app?.data : null;
+        if (data?.flushPendingLocalPersistence) {
+            data.flushPendingLocalPersistence();
+            return;
+        }
+        if (data?.save) {
+            data.save(true);
+        }
+    } catch (error) {
+        console.warn('[pwa] pending persistence flush failed before update', error);
+    }
+}
+
+function hasPendingAppPersistence() {
+    try {
+        return Boolean(window.app?.data?.hasPendingLocalPersistence?.());
+    } catch (_e) {
+        return false;
+    }
+}
+
 export function registerPwaLifecycle() {
     const pwaState = {
         updateReady: false,
@@ -49,6 +72,9 @@ export function registerPwaLifecycle() {
         apply() {
             const worker = waitingWorker || registration?.waiting;
             if (!worker) return false;
+            if (hasPendingAppPersistence()) {
+                flushAppPersistenceBestEffort();
+            }
             reloadOnControllerChange = true;
             worker.postMessage({ action: 'skipWaiting' });
             return true;
@@ -67,6 +93,9 @@ export function registerPwaLifecycle() {
             updateChannel = new BroadcastChannel(SW_UPDATE_CHANNEL);
             updateChannel.addEventListener('message', (e) => {
                 if (e.data?.type === 'SW_ACTIVATED' && e.data?.senderId !== channelClientId) {
+                    if (hasPendingAppPersistence()) {
+                        flushAppPersistenceBestEffort();
+                    }
                     window.location.reload();
                 }
             });
@@ -142,6 +171,7 @@ export function registerPwaLifecycle() {
     navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (refreshing || !reloadOnControllerChange) return;
         refreshing = true;
+        flushAppPersistenceBestEffort();
         try {
             updateChannel?.postMessage({ type: 'SW_ACTIVATED', senderId: channelClientId });
         } catch (_e) {

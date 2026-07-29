@@ -19,7 +19,8 @@ export const UI_STRINGS = {
         generating: '번호 생성 중...',
         generatingCampaign: '캠페인 생성 중...',
         workerFallback: '워커 응답이 지연되어 메인 스레드로 전환합니다.',
-        workerFallbackCampaign: '캠페인 생성 워커가 지연되어 메인 스레드로 전환합니다.'
+        workerFallbackCampaign: '캠페인 생성 워커가 지연되어 메인 스레드로 전환합니다.',
+        dataUnavailable: '당첨 데이터가 없습니다. 데이터 관리에서 동기화하거나 데이터 파일을 확인해주세요.'
     },
     ai: {
         workerFallback: '워커 응답이 지연되어 메인 스레드 번호 추천으로 전환합니다.',
@@ -61,7 +62,11 @@ export const UI_STRINGS = {
             return `${count}개 회차 업데이트를 반영했습니다.${futureSuffix}`;
         },
         latestUnavailable: '최신 회차를 확인하지 못했습니다.',
+        latestUnavailableThirdParty:
+            '최신 회차를 확인하지 못했습니다. 공개 CORS 중계(corsproxy.io 등)가 불안정할 수 있습니다. 설정에서 자체 데이터 연결 주소(Worker)를 권장합니다.',
         genericError: '동기화 중 오류가 발생했습니다.',
+        genericErrorThirdParty:
+            '동기화 중 오류가 발생했습니다. 기본 자동 동기화는 공개 CORS 중계에 의존합니다. 자체 Worker 연결 또는 잠시 후 재시도를 권장합니다.',
         logUpToDate: '이미 최신 상태입니다.',
         logRange(fromNo, toNo) {
             return `동기화 대상 범위: ${fromNo}~${toNo}회`;
@@ -79,7 +84,9 @@ export const UI_STRINGS = {
         logCancelled: '사용자 요청으로 동기화를 취소했습니다.',
         logError(message = '') {
             return `동기화 오류: ${message}`;
-        }
+        },
+        logThirdPartyHint:
+            '참고: 기본 자동 동기화는 공개 CORS 중계를 경유할 수 있습니다. 안정적으로 쓰려면 자체 Worker를 설정하세요.'
     },
     moreMenu: {
         title: '더보기',
@@ -88,6 +95,24 @@ export const UI_STRINGS = {
         settings: '설정',
         install: '앱 설치',
         unavailableInstall: '이 환경에서는 설치 프롬프트를 바로 표시할 수 없습니다.'
+    },
+    pwa: {
+        cachePending: '서비스 워커 활성화 후 캐시 상태를 확인합니다.',
+        cacheOk(version = '') {
+            return version ? `기본 캐시 준비 완료 (${version})` : '기본 캐시 준비 완료';
+        },
+        cacheWarning(count = 0) {
+            return `캐시 실패 ${count}건. 앱 업데이트를 확인한 뒤 다시 살펴보세요.`;
+        },
+        cacheNotReady: '아직 캐시 상태를 읽을 수 없습니다. 설치 직후에는 정상일 수 있습니다.',
+        badgePending: '확인 전',
+        badgeOk: '정상',
+        badgeWarning(count = 0) {
+            return `주의 ${count}`;
+        },
+        badgeNotReady: '준비 중',
+        updateFlushHint: '저장 중인 데이터를 반영한 뒤 업데이트를 적용합니다.',
+        updateReloadOtherTab: '다른 탭에서 앱이 갱신되어 화면을 새로고침합니다.'
     },
     check: {
         emptySelection: '비교할 항목을 선택하세요.',

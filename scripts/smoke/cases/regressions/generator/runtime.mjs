@@ -8,7 +8,8 @@ import {
     DataManager,
     GeneratorModule,
     LottoApp,
-    normalizeBackupPayload
+    normalizeBackupPayload,
+    UIManager
 } from '../support.mjs';
 
 async function runGeneratorStrategySelectionRegression() {
@@ -208,4 +209,73 @@ async function runGeneratorSetCountClampRegression() {
     }
 }
 
-export { runGeneratorStrategySelectionRegression, runGeneratorSetCountClampRegression };
+async function runGeneratorDataUnavailableGuardRegression() {
+    const previousDocument = globalThis.document;
+    const previousToast = UIManager.toast;
+    const toasts = [];
+    UIManager.toast = (message) => {
+        toasts.push(String(message || ''));
+    };
+
+    globalThis.document = createDocumentStub({
+        '#setCount': createField({ value: '5' }),
+        '#fixedNums': createField({ value: '' }),
+        '#excludeNums': createField({ value: '' }),
+        '#limitConsecutive': createField({ checked: false }),
+        '#genResultList': createField(),
+        '#toast-container': null
+    });
+
+    try {
+        const data = new DataManager();
+        data.save = () => {};
+        data.state.winningStats = [];
+
+        let workerCalled = false;
+        const ctx = {
+            data,
+            app: { data },
+            workerClient: {
+                async generate() {
+                    workerCalled = true;
+                    return { sets: [[1, 2, 3, 4, 5, 6]] };
+                }
+            },
+            isGenerating: false,
+            isGeneratingCampaign: false,
+            generationToken: 0,
+            uiStrings: {
+                dataUnavailable: '당첨 데이터가 없습니다. 데이터 관리에서 동기화하거나 데이터 파일을 확인해주세요.'
+            },
+            syncBusyButtons() {},
+            parseInput() {
+                return [];
+            },
+            getStrategyRequestFromUI() {
+                return { strategyId: 'random_baseline', params: {}, filters: {} };
+            },
+            renderResultItem() {},
+            isWorkerTimeoutError() {
+                return false;
+            }
+        };
+
+        const result = await GeneratorModule.prototype.generate.call(ctx);
+        assert.equal(result, false, 'generator must abort when winning stats are unavailable');
+        assert.equal(workerCalled, false, 'generator must not call the worker without data');
+        assert.ok(
+            toasts.some((message) => message.includes('당첨 데이터가 없습니다')),
+            'generator must toast when data is unavailable'
+        );
+    } finally {
+        UIManager.toast = previousToast;
+        if (previousDocument === undefined) delete globalThis.document;
+        else globalThis.document = previousDocument;
+    }
+}
+
+export {
+    runGeneratorStrategySelectionRegression,
+    runGeneratorSetCountClampRegression,
+    runGeneratorDataUnavailableGuardRegression
+};

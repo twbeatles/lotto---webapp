@@ -56,6 +56,54 @@ function runQueryProxyAckRegression() {
     );
 }
 
+async function runQueryProxyConfirmFailClosedRegression() {
+    const previousConfirm = UIManager.confirm;
+    const previousToast = UIManager.toast;
+    const previousSession = globalThis.sessionStorage;
+    const store = new Map();
+    globalThis.sessionStorage = {
+        getItem(key) {
+            return store.has(key) ? store.get(key) : null;
+        },
+        setItem(key, value) {
+            store.set(String(key), String(value));
+        },
+        removeItem(key) {
+            store.delete(String(key));
+        }
+    };
+    const toasts = [];
+
+    UIManager.confirm = undefined;
+    UIManager.toast = (message) => {
+        toasts.push(String(message || ''));
+    };
+
+    try {
+        const dm = new DataManager();
+        dm.getQueryProxyUrl = () =>
+            dm.buildProxyConfig('URL 쿼리(proxyUrl)', 'https://worker.example/proxy/latest');
+
+        assert.equal(typeof UIManager.confirm, 'undefined', 'test setup must clear UIManager.confirm');
+        const acknowledged = await dm.ensureQueryProxyAcknowledged();
+        assert.equal(acknowledged, false, 'query proxy must be rejected when confirm UI is unavailable');
+        assert.equal(
+            dm._isQueryProxySuppressed(dm.getQueryProxyUrl()),
+            true,
+            'fail-closed path must suppress the query proxy for the session'
+        );
+        assert.ok(
+            toasts.some((message) => message.includes('URL 프록시')),
+            'fail-closed path must surface a toast explaining the rejection'
+        );
+    } finally {
+        UIManager.confirm = previousConfirm;
+        UIManager.toast = previousToast;
+        if (previousSession === undefined) delete globalThis.sessionStorage;
+        else globalThis.sessionStorage = previousSession;
+    }
+}
+
 async function runImportInFlightGuardRegression() {
     const previousToast = UIManager.toast;
     const toasts = [];
@@ -270,6 +318,7 @@ function runPension720SyncMetaRegression() {
 export {
     runPension720RemoteFetchCandidateRegression,
     runQueryProxyAckRegression,
+    runQueryProxyConfirmFailClosedRegression,
     runImportInFlightGuardRegression,
     runStrategyWorkerQueueRegression,
     runProxyWorkerPension720ListRouteRegression,

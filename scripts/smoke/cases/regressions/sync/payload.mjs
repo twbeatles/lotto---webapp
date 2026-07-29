@@ -11,6 +11,7 @@ import {
     readFile,
     resolve
 } from '../support.mjs';
+import { buildBuiltinCorsFetchUrls } from '../../../../../assets/modules/core/data/sync/builtinProviders.js';
 
 async function runSyncInvalidPayloadRegression() {
     const dm = new DataManager();
@@ -191,35 +192,43 @@ function runBuiltInSyncProviderRegression() {
 
     const urls = dm.buildBuiltInSingleFetchUrls(1215);
 
-    assert.equal(urls[0]?.label, '공식 API', 'built-in sync must try the official API first');
+    assert.equal(urls[0]?.label, '공식 API', 'Node/script built-in sync may try the official API first');
 
     assert.match(
         urls[0]?.url || '',
-
         /https:\/\/www\.dhlottery\.co\.kr\/lt645\/selectPstLt645Info\.do\?srchLtEpsd=1215/,
-
         'official API candidate must target the requested draw number directly'
     );
 
     assert.ok(
         urls.some((item) => item.label === 'corsproxy.io'),
-
         'built-in sync must keep corsproxy.io as a fallback provider'
     );
 
     assert.ok(
         urls.some((item) => item.label === 'CodeTabs'),
-
         'built-in sync may still keep CodeTabs as a last fallback provider'
+    );
+
+    const browserSafe = buildBuiltinCorsFetchUrls(
+        'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do?srchLtEpsd=1215',
+        { includeDirectOfficial: false }
+    );
+    assert.equal(
+        browserSafe.some((item) => item.label === '공식 API'),
+        false,
+        'browser-safe built-in list must skip the direct official API candidate'
+    );
+    assert.ok(
+        browserSafe.some((item) => item.label === 'corsproxy.io'),
+        'browser-safe built-in list must keep corsproxy.io'
     );
 
     assert.equal(dm.isAbortError(dm.createAbortError()), true, 'explicit sync abort errors must still be recognized');
 
     assert.equal(
         dm.isAbortError({ name: 'TypeError', message: 'net::ERR_ABORTED' }),
-
         false,
-
         'generic provider failures must not be misclassified as user aborts'
     );
 }
