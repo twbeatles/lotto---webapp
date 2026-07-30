@@ -19,10 +19,10 @@ Current handoff note for agents working on `lotto-pension-pro-webapp`.
     - Allowed missing draw: `[146]`
 - Pension720+ static data:
     - Source: `data/pension720_stats.json`
-    - Latest draw: `325`
-    - Latest date: `2026-07-23`
-    - Latest primary: `3조 011391`
-    - Latest bonus: `438906`
+    - Latest draw: `326`
+    - Latest date: `2026-07-30`
+    - Latest primary: `2조 502733`
+    - Latest bonus: `399616`
 - Both data files are included in the generated service-worker precache manifest.
 
 ## Runtime Shape
