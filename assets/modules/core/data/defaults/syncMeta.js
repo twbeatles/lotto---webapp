@@ -107,6 +107,14 @@ export const dataDefaultsSyncMetaMethods = {
         return err;
     },
 
+    createTimeoutError(timeoutMs = this.SYNC_FETCH_TIMEOUT_MS || 4500) {
+        const ms = Math.max(0, Math.floor(Number(timeoutMs) || 0));
+        const err = new Error(`Request timed out after ${ms}ms`);
+        err.name = 'TimeoutError';
+        err.code = 'SYNC_FETCH_TIMEOUT';
+        return err;
+    },
+
     isActiveSyncRun(runId) {
         if (!runId) return true;
         return runId === this._activeSyncRunId;
@@ -127,10 +135,23 @@ export const dataDefaultsSyncMetaMethods = {
         return true;
     },
 
+    isTimeoutError(err) {
+        if (!err) return false;
+        if (err.name === 'TimeoutError' || err.code === 'SYNC_FETCH_TIMEOUT') return true;
+        return /timed out after|request timed out/i.test(String(err.message || ''));
+    },
+
     isAbortError(err) {
         if (!err) return false;
-        if (err.name === 'AbortError') return true;
-        return String(err.message || '') === 'Sync aborted';
+        // Client-side request timeouts must not look like user cancel (toast/short-circuit).
+        if (this.isTimeoutError(err)) return false;
+        if (String(err.message || '') === 'Sync aborted') return true;
+        if (err.name === 'AbortError') {
+            const message = String(err.message || '');
+            if (/timed out|timeout/i.test(message)) return false;
+            return true;
+        }
+        return false;
     },
 
     cancelActiveSync() {

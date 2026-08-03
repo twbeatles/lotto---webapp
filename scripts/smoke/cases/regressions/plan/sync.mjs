@@ -114,6 +114,11 @@ const syncPlan = [
         label: 'built-in sync provider regression'
     },
     {
+        name: 'runSyncFetchTimeoutAbortClassificationRegression',
+        label: 'sync fetch timeout abort classification regression',
+        awaited: true
+    },
+    {
         name: 'runSyncThirdPartyProviderNoticeRegression',
         label: 'sync third-party provider notice regression',
         awaited: true

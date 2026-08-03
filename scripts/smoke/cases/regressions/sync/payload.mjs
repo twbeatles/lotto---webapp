@@ -231,6 +231,103 @@ function runBuiltInSyncProviderRegression() {
         false,
         'generic provider failures must not be misclassified as user aborts'
     );
+
+    const timeoutErr = dm.createTimeoutError(4500);
+    assert.equal(timeoutErr.name, 'TimeoutError', 'sync timeout errors must use TimeoutError name');
+    assert.equal(timeoutErr.code, 'SYNC_FETCH_TIMEOUT', 'sync timeout errors must carry SYNC_FETCH_TIMEOUT');
+    assert.equal(dm.isTimeoutError(timeoutErr), true, 'createTimeoutError must be recognized as a timeout');
+    assert.equal(
+        dm.isAbortError(timeoutErr),
+        false,
+        'request timeouts must not be misclassified as user sync aborts'
+    );
+}
+
+/**
+ * Timeout AbortController aborts must not look like user cancel, and must allow the next
+ * built-in/CORS candidate to run (same class of bug that broke scheduled CI defer).
+ */
+async function runSyncFetchTimeoutAbortClassificationRegression() {
+    const dm = new DataManager();
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+
+    globalThis.fetch = async (_url, options = {}) => {
+        fetchCalls += 1;
+        const call = fetchCalls;
+        return new Promise((resolve, reject) => {
+            const signal = options.signal;
+            if (signal?.aborted) {
+                const err = new Error('This operation was aborted');
+                err.name = 'AbortError';
+                reject(err);
+                return;
+            }
+            const onAbort = () => {
+                const err = new Error('This operation was aborted');
+                err.name = 'AbortError';
+                reject(err);
+            };
+            signal?.addEventListener('abort', onAbort, { once: true });
+
+            // First candidate hangs until client timeout; second responds successfully.
+            if (call === 1) return;
+
+            setTimeout(() => {
+                signal?.removeEventListener('abort', onAbort);
+                resolve({
+                    ok: true,
+                    text: async () =>
+                        JSON.stringify({
+                            draw_no: 1215,
+                            date: '2026-05-10',
+                            numbers: [1, 2, 3, 4, 5, 6],
+                            bonus: 7
+                        })
+                });
+            }, 5);
+        });
+    };
+
+    try {
+        await assert.rejects(
+            () => dm.fetchWithTimeout('https://example.test/hang', {}, 30),
+            (error) => {
+                assert.equal(error?.name, 'TimeoutError', 'fetchWithTimeout must remap timer aborts to TimeoutError');
+                assert.equal(error?.code, 'SYNC_FETCH_TIMEOUT', 'fetchWithTimeout timeout must set SYNC_FETCH_TIMEOUT');
+                assert.equal(dm.isAbortError(error), false, 'timeout errors must not be treated as cancel');
+                return true;
+            }
+        );
+
+        const external = new AbortController();
+        const pending = dm.fetchWithTimeout('https://example.test/cancel', {}, 5000, external.signal);
+        external.abort();
+        await assert.rejects(
+            () => pending,
+            (error) => {
+                assert.equal(dm.isAbortError(error), true, 'external abort signal must remain a sync cancel');
+                assert.match(String(error?.message || ''), /Sync aborted/, 'external abort must use Sync aborted');
+                return true;
+            }
+        );
+
+        dm.buildCustomSingleFetchUrls = () => [
+            { label: 'hang-proxy', url: 'https://proxy.example/hang?draw=1215' }
+        ];
+        dm.buildBuiltInSingleFetchUrls = () => [
+            { label: 'fallback', url: 'https://proxy.example/fallback?draw=1215' }
+        ];
+        dm.SYNC_FETCH_TIMEOUT_MS = 40;
+
+        fetchCalls = 0;
+        const item = await dm.fetchOneDraw(1215, { url: '', source: 'built-in' });
+        assert.ok(item, 'fetchOneDraw must continue to the next candidate after a timeout');
+        assert.equal(fetchCalls, 2, 'fetchOneDraw must attempt the fallback provider after timeout');
+        assert.equal(Number(item.draw_no), 1215, 'fallback candidate payload must normalize to the requested draw');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 }
 
 async function runSyncThirdPartyProviderNoticeRegression() {
@@ -255,5 +352,6 @@ export {
     runSyncPayloadDrawIntegerGuardRegression,
     runMalformedDrawDateRejectedRegression,
     runBuiltInSyncProviderRegression,
+    runSyncFetchTimeoutAbortClassificationRegression,
     runSyncThirdPartyProviderNoticeRegression
 };
