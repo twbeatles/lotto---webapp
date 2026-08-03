@@ -111,15 +111,23 @@ async function main() {
                 `estimated Lotto draw ${estimatedLatestDrawNo} is not published by the official endpoint yet`;
         }
     } else {
+        // Static snapshot already matches estimated latest. Still run the scheduled official
+        // check so field-level drift is caught when the source is up; AbortError/timeouts defer.
         const scheduledCheck = await runNodeScript(
             'scripts/check_lotto_official_freshness.mjs',
-            LOTTO_OFFICIAL_SCHEDULED_ARGS
+            LOTTO_OFFICIAL_SCHEDULED_ARGS,
+            { allowFailure: true }
         );
+        if (!scheduledCheck.ok) {
+            throw scheduledCheck.error;
+        }
         const lottoOfficialSummary = parseJsonOutput(scheduledCheck.result.stdout);
         lottoOfficialDeferred = Boolean(lottoOfficialSummary?.deferred);
         lottoOfficialDeferredReason = lottoOfficialSummary?.deferredReason || '';
     }
 
+    // Official-source flakiness (timeout/AbortError) must not block SW/docs baseline refresh when
+    // static data is already at the estimated latest draw. Only estimated-missing defers those steps.
     if (!deferred) {
         await runNodeScript('scripts/generate_sw_manifest.mjs');
         await runNodeScript('scripts/update_docs_data_baseline.mjs');

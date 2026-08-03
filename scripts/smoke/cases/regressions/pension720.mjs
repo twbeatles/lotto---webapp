@@ -301,6 +301,21 @@ function runPension720OfficialFetchWrappedErrorRegression() {
     const wrapped = new Error('official pension720 fetch failed after 3 attempt(s): fetch failed', {
         cause: timeout
     });
+
+    const abortCause = new Error('This operation was aborted');
+    abortCause.name = 'AbortError';
+    const wrappedAbort = new Error(
+        'official pension720 fetch failed after 3 attempt(s): This operation was aborted',
+        { cause: abortCause }
+    );
+
+    const timeoutError = new Error('The operation was aborted due to timeout');
+    timeoutError.name = 'TimeoutError';
+    const wrappedTimeoutError = new Error(
+        'official pension720 fetch failed after 3 attempt(s): The operation was aborted due to timeout',
+        { cause: timeoutError }
+    );
+
     const malformedJson = new Error('official pension720 fetch failed after 1 attempt(s): bad json', {
         cause: new SyntaxError('Unexpected token')
     });
@@ -309,6 +324,16 @@ function runPension720OfficialFetchWrappedErrorRegression() {
         isRetriableOfficialFetchError(wrapped),
         true,
         'wrapped pension720 timeout must be classified as retriable for CI defer'
+    );
+    assert.equal(
+        isRetriableOfficialFetchError(wrappedAbort),
+        true,
+        'wrapped pension720 AbortError must be retriable/deferrable for scheduled CI'
+    );
+    assert.equal(
+        isRetriableOfficialFetchError(wrappedTimeoutError),
+        true,
+        'wrapped pension720 TimeoutError must be retriable/deferrable for scheduled CI'
     );
     assert.equal(
         isRetriableOfficialFetchError(malformedJson),

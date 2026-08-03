@@ -42,6 +42,10 @@ const pension720Plan = [
         awaited: true
     },
     {
+        name: 'runPension720OfficialFetchWrappedErrorRegression',
+        label: 'pension720 official fetch wrapped-error regression'
+    },
+    {
         name: 'runPension720LatestCheckRegression',
         label: 'pension720 latest-check regression'
     },

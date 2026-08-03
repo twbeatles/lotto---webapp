@@ -36,15 +36,33 @@ function collectErrorChain(error) {
 }
 
 function formatOfficialUnavailableReason(error) {
-    const code = collectErrorChain(error).find((item) => RETRIABLE_FETCH_CODES.has(item?.code))?.code;
+    const chain = collectErrorChain(error);
+    const code = chain.find((item) => RETRIABLE_FETCH_CODES.has(item?.code))?.code;
+    const abortName = chain.find((item) => isAbortOrTimeoutErrorName(item?.name))?.name;
     const message = error?.message || String(error);
-    return code ? `${message} (${code})` : message;
+    if (code) return `${message} (${code})`;
+    if (abortName) return `${message} (${abortName})`;
+    return message;
+}
+
+function isAbortOrTimeoutErrorName(name) {
+    return name === 'AbortError' || name === 'TimeoutError';
+}
+
+function isAbortOrTimeoutError(item) {
+    if (!item || typeof item !== 'object') return false;
+    if (isAbortOrTimeoutErrorName(item.name)) return true;
+    const message = String(item.message || '');
+    // fetchWithTimeout aborts via AbortController; undici surfaces "This operation was aborted".
+    return /operation was aborted|aborted due to timeout|the operation was aborted/i.test(message);
 }
 
 function isRetriableOfficialFetchLog(entry) {
     if (entry?.code !== 'SYNC_FETCH_ONE_FAIL') return false;
     const message = String(entry?.meta?.message || entry?.message || '');
-    return /fetch failed|timeout|network|socket|ECONN|ETIMEDOUT|EAI_AGAIN|UND_ERR/i.test(message);
+    return /fetch failed|timeout|network|socket|ECONN|ETIMEDOUT|EAI_AGAIN|UND_ERR|aborted|AbortError|TimeoutError/i.test(
+        message
+    );
 }
 
 function normalizeRows(rows = []) {
@@ -156,6 +174,10 @@ function isRetriableOfficialFetchError(error) {
 
         const status = Number(item?.status || 0);
         if (status === 429 || status >= 500) return true;
+
+        // Timeout aborts from fetchWithTimeout / AbortSignal.timeout must defer scheduled CI,
+        // not fail the Data Freshness job while static snapshots remain valid.
+        if (isAbortOrTimeoutError(item)) return true;
 
         return RETRIABLE_FETCH_CODES.has(item?.code) || item instanceof TypeError;
     });

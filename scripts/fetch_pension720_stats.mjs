@@ -36,10 +36,26 @@ function collectErrorChain(error) {
     return chain;
 }
 
+function isAbortOrTimeoutErrorName(name) {
+    return name === 'AbortError' || name === 'TimeoutError';
+}
+
+function isAbortOrTimeoutError(item) {
+    if (!item || typeof item !== 'object') return false;
+    if (isAbortOrTimeoutErrorName(item.name)) return true;
+    const message = String(item.message || '');
+    // AbortSignal.timeout / AbortController aborts surface as AbortError or TimeoutError.
+    return /operation was aborted|aborted due to timeout|the operation was aborted/i.test(message);
+}
+
 function formatOfficialUnavailableReason(error) {
-    const code = collectErrorChain(error).find((item) => RETRIABLE_FETCH_CODES.has(item?.code))?.code;
+    const chain = collectErrorChain(error);
+    const code = chain.find((item) => RETRIABLE_FETCH_CODES.has(item?.code))?.code;
+    const abortName = chain.find((item) => isAbortOrTimeoutErrorName(item?.name))?.name;
     const message = error?.message || String(error);
-    return code ? `${message} (${code})` : message;
+    if (code) return `${message} (${code})`;
+    if (abortName) return `${message} (${abortName})`;
+    return message;
 }
 
 function normalizeDate(rawValue = '') {
@@ -111,6 +127,9 @@ function isRetriableOfficialFetchError(error) {
     return collectErrorChain(error).some((item) => {
         const status = Number(item?.status || 0);
         if (status === 429 || status >= 500) return true;
+
+        // AbortSignal.timeout and connect/read aborts must be deferrable in scheduled CI.
+        if (isAbortOrTimeoutError(item)) return true;
 
         return RETRIABLE_FETCH_CODES.has(item?.code) || item instanceof TypeError;
     });

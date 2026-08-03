@@ -281,11 +281,35 @@ function runLottoOfficialFetchWrappedErrorRegression() {
         cause: timeout
     });
 
+    // fetchWithTimeout AbortController path (undici DOMException AbortError) — root cause of
+    // Data Freshness CI failures when the official/relay endpoints hang until client timeout.
+    const abortCause = new Error('This operation was aborted');
+    abortCause.name = 'AbortError';
+    const wrappedAbort = new Error(
+        'official lotto draw 1235 could not be fetched after 3 attempt(s): This operation was aborted',
+        { cause: abortCause }
+    );
+
+    const timeoutError = new Error('The operation was aborted due to timeout');
+    timeoutError.name = 'TimeoutError';
+    const wrappedTimeoutError = new Error(
+        'official lotto draw 10 could not be fetched after 3 attempt(s): The operation was aborted due to timeout',
+        { cause: timeoutError }
+    );
+
     const loggedTimeout = new Error('official lotto draw 10 could not be fetched after 3 attempt(s): no payload');
     loggedTimeout.logs = [
         {
             code: 'SYNC_FETCH_ONE_FAIL',
             meta: { message: 'fetch failed' }
+        }
+    ];
+
+    const loggedAbort = new Error('official lotto draw 10 could not be fetched after 3 attempt(s): no payload');
+    loggedAbort.logs = [
+        {
+            code: 'SYNC_FETCH_ONE_FAIL',
+            meta: { message: 'This operation was aborted' }
         }
     ];
 
@@ -306,9 +330,27 @@ function runLottoOfficialFetchWrappedErrorRegression() {
     );
 
     assert.equal(
+        isRetriableOfficialFetchError(wrappedAbort),
+        true,
+        'wrapped Lotto AbortError (fetchWithTimeout) must be retriable/deferrable for scheduled CI'
+    );
+
+    assert.equal(
+        isRetriableOfficialFetchError(wrappedTimeoutError),
+        true,
+        'wrapped Lotto TimeoutError must be retriable/deferrable for scheduled CI'
+    );
+
+    assert.equal(
         isRetriableOfficialFetchError(loggedTimeout),
         true,
         'logged Lotto provider fetch failures must be classified as retriable for scheduled CI defer'
+    );
+
+    assert.equal(
+        isRetriableOfficialFetchError(loggedAbort),
+        true,
+        'logged Lotto AbortError messages must be classified as retriable for scheduled CI defer'
     );
 
     assert.equal(
