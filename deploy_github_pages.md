@@ -63,10 +63,10 @@ Lotto official freshness와 Pension720+ freshness 검증은 공식 endpoint를 �
     - 공식 필드 검증: `npm run check:lotto:official`
 - Pension720+:
     - 정적 데이터: `data/pension720_stats.json`
-    - 최신 회차: `327`
-    - 최신 날짜: `2026-08-06`
-    - 최신 1등: `3조 221540`
-    - 최신 보너스: `727161`
+    - 최신 회차: `328`
+    - 최신 날짜: `2026-08-13`
+    - 최신 1등: `3조 644513`
+    - 최신 보너스: `177237`
     - 동기화: `npm run sync:pension720`
     - 검증: `npm run check:pension720`
     - 공식 최신성 검증: `npm run check:pension720:freshness`
