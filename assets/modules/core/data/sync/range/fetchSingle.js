@@ -11,7 +11,18 @@ export const dataSyncRangeSingleFetchMethods = {
             if (signal?.aborted) throw this.createAbortError('Sync aborted');
             try {
                 const res = await this.fetchWithTimeout(candidate.url, {}, this.SYNC_FETCH_TIMEOUT_MS, signal);
-                if (!res.ok) continue;
+                if (!res.ok) {
+                    this.logSync('SYNC_FETCH_ONE_HTTP', `HTTP ${res.status} single draw fetch ${drawNo}`, {
+                        fetchUrl: candidate.url,
+                        source: candidate.label,
+                        status: res.status
+                    });
+                    log(`${drawNo}회차 HTTP ${res.status} (${candidate.label})`, 'SYNC_FETCH_ONE_HTTP', {
+                        source: candidate.label,
+                        status: res.status
+                    });
+                    continue;
+                }
                 const payload = this.parseSyncPayload(await res.text());
                 const item = this.extractSingleDrawFromPayload(payload);
                 if (item) {

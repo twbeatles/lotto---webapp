@@ -13,7 +13,8 @@ export const BUILTIN_CORS_PROVIDERS = [
     {
         label: 'corsproxy.io',
         buildUrl(targetUrl) {
-            return `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+            // 레거시 `?<encoded-url>` 는 403 keyless_legacy_url. 현재 공개 API는 `?url=`.
+            return `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
         },
         browserDirect: true
     },

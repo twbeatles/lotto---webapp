@@ -4,6 +4,31 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '30 23 * * 0'
+  push:
+    branches: [main]
+    paths:
+      - 'assets/modules/core/data/sync/builtinProviders.js'
+      - 'assets/modules/core/data/sync/range/fetchSingle.js'
+      - 'assets/modules/core/data/pension720/remoteFetch.js'
+      - 'scripts/check_cors_relay_contract.mjs'
+      - 'scripts/lib/corsRelayContract.mjs'
+      - 'scripts/tests/live_data_source_playwright.mjs'
+      - '.github/workflows/browser-official.yml'
+      - 'package.json'
+  pull_request:
+    paths:
+      - 'assets/modules/core/data/sync/builtinProviders.js'
+      - 'assets/modules/core/data/sync/range/fetchSingle.js'
+      - 'assets/modules/core/data/pension720/remoteFetch.js'
+      - 'scripts/check_cors_relay_contract.mjs'
+      - 'scripts/lib/corsRelayContract.mjs'
+      - 'scripts/tests/live_data_source_playwright.mjs'
+      - '.github/workflows/browser-official.yml'
+      - 'package.json'
+
+concurrency:
+  group: browser-official-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   browser-official:
@@ -21,8 +46,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: CORS relay contract
+        id: cors-contract
+        run: node scripts/check_cors_relay_contract.mjs ${{ github.event_name == 'schedule' && '--defer-unavailable' || '' }}
+
       - name: Install Chromium
+        if: steps.cors-contract.outputs.deferred != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Browser official source gate
-        run: npm run ci:browser-official
+        if: steps.cors-contract.outputs.deferred != 'true'
+        run: |
+          set -euo pipefail
+          max=3
+          attempt=1
+          while true; do
+            if npm run test:sync-live:browser:official; then
+              exit 0
+            fi
+            if [ "$attempt" -ge "$max" ]; then
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "Retrying browser official canary ($attempt/$max)"
+            sleep 15
+          done

@@ -114,8 +114,22 @@ const syncPlan = [
         label: 'built-in sync provider regression'
     },
     {
+        name: 'runCorsRelayContractRegression',
+        label: 'cors relay contract regression'
+    },
+    {
+        name: 'runCorsRelayProviderSourceRegression',
+        label: 'cors relay provider source regression',
+        awaited: true
+    },
+    {
         name: 'runSyncFetchTimeoutAbortClassificationRegression',
         label: 'sync fetch timeout abort classification regression',
+        awaited: true
+    },
+    {
+        name: 'runSyncFetchHttpErrorContinuesRegression',
+        label: 'sync fetch HTTP error continues regression',
         awaited: true
     },
     {

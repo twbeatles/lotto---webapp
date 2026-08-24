@@ -143,6 +143,21 @@ async function main() {
         });
 
         const result = await runCanary(page, { requireOfficial });
+        if (Number(result.lottoItem?.draw_no || 0) !== result.latestDrawNo) {
+            console.error(
+                JSON.stringify(
+                    {
+                        ok: false,
+                        reason: 'lotto fetch mismatch',
+                        latestDrawNo: result.latestDrawNo,
+                        lottoItem: result.lottoItem,
+                        lottoLogs: result.lottoLogs
+                    },
+                    null,
+                    2
+                )
+            );
+        }
         assert.equal(
             Number(result.lottoItem?.draw_no || 0),
             result.latestDrawNo,

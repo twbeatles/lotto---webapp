@@ -12,6 +12,12 @@ import {
     resolve
 } from '../support.mjs';
 import { buildBuiltinCorsFetchUrls } from '../../../../../assets/modules/core/data/sync/builtinProviders.js';
+import {
+    classifyCorsRelayFailure,
+    inspectCorsproxyCandidate,
+    isCurrentCorsproxyUrl,
+    isLegacyCorsproxyUrl
+} from '../../../../lib/corsRelayContract.mjs';
 
 async function runSyncInvalidPayloadRegression() {
     const dm = new DataManager();
@@ -200,10 +206,19 @@ function runBuiltInSyncProviderRegression() {
         'official API candidate must target the requested draw number directly'
     );
 
-    assert.ok(
-        urls.some((item) => item.label === 'corsproxy.io'),
-        'built-in sync must keep corsproxy.io as a fallback provider'
+    const corsproxy = urls.find((item) => item.label === 'corsproxy.io');
+    assert.ok(corsproxy, 'built-in sync must keep corsproxy.io as a fallback provider');
+    assert.equal(
+        isCurrentCorsproxyUrl(corsproxy?.url || ''),
+        true,
+        'corsproxy.io must use the current ?url= API (legacy ?<encoded-url> is rejected as keyless_legacy_url)'
     );
+    assert.equal(
+        isLegacyCorsproxyUrl(corsproxy?.url || ''),
+        false,
+        'built-in corsproxy.io candidate must not keep the rejected legacy URL form'
+    );
+    assert.equal(inspectCorsproxyCandidate(corsproxy).ok, true, 'corsproxy.io candidate must pass the relay contract');
 
     assert.ok(
         urls.some((item) => item.label === 'CodeTabs'),
@@ -219,9 +234,12 @@ function runBuiltInSyncProviderRegression() {
         false,
         'browser-safe built-in list must skip the direct official API candidate'
     );
-    assert.ok(
-        browserSafe.some((item) => item.label === 'corsproxy.io'),
-        'browser-safe built-in list must keep corsproxy.io'
+    const browserCorsproxy = browserSafe.find((item) => item.label === 'corsproxy.io');
+    assert.ok(browserCorsproxy, 'browser-safe built-in list must keep corsproxy.io');
+    assert.match(
+        browserCorsproxy?.url || '',
+        /^https:\/\/corsproxy\.io\/\?url=/,
+        'browser-safe corsproxy.io candidate must use the current ?url= API'
     );
 
     assert.equal(dm.isAbortError(dm.createAbortError()), true, 'explicit sync abort errors must still be recognized');
@@ -240,6 +258,63 @@ function runBuiltInSyncProviderRegression() {
         dm.isAbortError(timeoutErr),
         false,
         'request timeouts must not be misclassified as user sync aborts'
+    );
+}
+
+function runCorsRelayContractRegression() {
+    const officialTarget = 'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do?srchLtEpsd=1215';
+    const current = `https://corsproxy.io/?url=${encodeURIComponent(officialTarget)}`;
+    const legacy = `https://corsproxy.io/?${encodeURIComponent(officialTarget)}`;
+
+    assert.equal(isCurrentCorsproxyUrl(current), true, 'current corsproxy.io URL must match ?url=');
+    assert.equal(isLegacyCorsproxyUrl(legacy), true, 'legacy corsproxy.io ?<encoded-url> must be detected');
+    assert.equal(
+        inspectCorsproxyCandidate({ label: 'corsproxy.io', url: legacy }).kind,
+        'contract',
+        'legacy corsproxy.io URL must fail the relay contract before any network call'
+    );
+
+    const legacyHttp = classifyCorsRelayFailure({
+        status: 403,
+        body: JSON.stringify({
+            success: false,
+            status: 403,
+            error: 'keyless_legacy_url',
+            message: 'Anonymous legacy proxy URLs are no longer supported.'
+        }),
+        url: legacy
+    });
+    assert.equal(legacyHttp.kind, 'contract', 'keyless_legacy_url must be a hard contract failure, not a flake');
+
+    const unavailable = classifyCorsRelayFailure({ status: 503, body: 'Service Unavailable', url: current });
+    assert.equal(unavailable.kind, 'unavailable', 'relay 503 must classify as unavailable for scheduled defer');
+
+    const serverSide = classifyCorsRelayFailure({
+        status: 403,
+        body: JSON.stringify({ error: 'Server-side requests are not allowed on your plan. Upgrade at https://corsproxy.io/pricing/' }),
+        url: current
+    });
+    assert.equal(
+        serverSide.kind,
+        'origin_policy',
+        'Node/server corsproxy.io probes must not be treated as a URL-contract break'
+    );
+}
+
+function runCorsRelayProviderSourceRegression() {
+    return readFile(resolve(process.cwd(), 'assets/modules/core/data/sync/builtinProviders.js'), 'utf8').then(
+        (source) => {
+            assert.match(
+                source,
+                /https:\/\/corsproxy\.io\/\?url=\$\{encodeURIComponent/,
+                'builtinProviders.js must keep the corsproxy.io ?url= template'
+            );
+            assert.equal(
+                /corsproxy\.io\/\?\$\{encodeURIComponent/.test(source),
+                false,
+                'builtinProviders.js must not rebuild the legacy corsproxy.io ?<encoded-url> form'
+            );
+        }
     );
 }
 
@@ -330,6 +405,52 @@ async function runSyncFetchTimeoutAbortClassificationRegression() {
     }
 }
 
+async function runSyncFetchHttpErrorContinuesRegression() {
+    const dm = new DataManager();
+    const originalFetch = globalThis.fetch;
+    const logs = [];
+
+    globalThis.fetch = async (url) => {
+        if (String(url).includes('forbidden')) {
+            return {
+                ok: false,
+                status: 403,
+                text: async () => JSON.stringify({ error: 'keyless_legacy_url' })
+            };
+        }
+        return {
+            ok: true,
+            status: 200,
+            text: async () =>
+                JSON.stringify({
+                    draw_no: 1215,
+                    date: '2026-05-10',
+                    numbers: [1, 2, 3, 4, 5, 6],
+                    bonus: 7
+                })
+        };
+    };
+
+    try {
+        dm.buildCustomSingleFetchUrls = () => [];
+        dm.buildBuiltInSingleFetchUrls = () => [
+            { label: 'corsproxy.io', url: 'https://corsproxy.io/?forbidden' },
+            { label: 'fallback', url: 'https://proxy.example/fallback?draw=1215' }
+        ];
+
+        const item = await dm.fetchOneDraw(1215, { url: '', source: 'built-in' }, (message, code, meta) => {
+            logs.push({ message, code, meta });
+        });
+        assert.equal(Number(item?.draw_no), 1215, 'fetchOneDraw must continue to the next candidate after HTTP 403');
+        assert.ok(
+            logs.some((entry) => entry.code === 'SYNC_FETCH_ONE_HTTP' && Number(entry.meta?.status) === 403),
+            'HTTP 403 must be logged instead of failing silently'
+        );
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+}
+
 async function runSyncThirdPartyProviderNoticeRegression() {
     const rangeSource = await readFile(
         resolve(process.cwd(), 'assets/modules/core/data/sync/range/fetchSingle.js'),
@@ -345,6 +466,11 @@ async function runSyncThirdPartyProviderNoticeRegression() {
         /candidate\.label !== '공식 API'/,
         'third-party sync notice must skip the official API label'
     );
+    assert.match(
+        rangeSource,
+        /SYNC_FETCH_ONE_HTTP/,
+        'single-draw sync must log non-OK HTTP statuses instead of skipping silently'
+    );
 }
 
 export {
@@ -352,6 +478,9 @@ export {
     runSyncPayloadDrawIntegerGuardRegression,
     runMalformedDrawDateRejectedRegression,
     runBuiltInSyncProviderRegression,
+    runCorsRelayContractRegression,
+    runCorsRelayProviderSourceRegression,
     runSyncFetchTimeoutAbortClassificationRegression,
+    runSyncFetchHttpErrorContinuesRegression,
     runSyncThirdPartyProviderNoticeRegression
 };

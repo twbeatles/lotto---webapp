@@ -32,9 +32,12 @@ function runPension720RemoteFetchCandidateRegression() {
         candidates[0]?.url?.includes('/proxy/pension720/list'),
         'custom proxy must be the first pension720 remote candidate'
     );
-    assert.ok(
-        candidates.some((item) => item.url.includes('corsproxy.io')),
-        'builtin cors fallback must remain available for pension720'
+    const corsproxy = candidates.find((item) => item.label === 'corsproxy.io' || String(item.url || '').includes('corsproxy.io'));
+    assert.ok(corsproxy, 'builtin cors fallback must remain available for pension720');
+    assert.match(
+        corsproxy?.url || '',
+        /corsproxy\.io\/\?url=/,
+        'pension720 corsproxy.io candidate must use the current ?url= API'
     );
 
     const payload = parsePension720RemotePayload(
