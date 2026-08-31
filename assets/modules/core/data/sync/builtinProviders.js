@@ -5,10 +5,11 @@ export const BUILTIN_CORS_PROVIDERS = [
             return targetUrl;
         },
         /**
-         * Browser pages cannot call dhlottery.co.kr directly (CORS).
-         * Keep the direct candidate for Node/scripts and custom runtimes that opt in.
+         * dhlottery now reflects Origin on simple GET (ACAOrigin + credentials).
+         * Public CORS relays are fallback-only: corsproxy.io requires an API key (401),
+         * and CodeTabs is often unavailable. Keep includeDirectOfficial:false for relay-only probes.
          */
-        browserDirect: false
+        browserDirect: true
     },
     {
         label: 'corsproxy.io',
@@ -27,21 +28,13 @@ export const BUILTIN_CORS_PROVIDERS = [
     }
 ];
 
-export function isBrowserDocumentRuntime() {
-    return (
-        typeof window !== 'undefined' &&
-        typeof document !== 'undefined' &&
-        typeof window.document !== 'undefined'
-    );
-}
-
 /**
  * @param {string} targetUrl
  * @param {{ includeDirectOfficial?: boolean }} [options]
  *   includeDirectOfficial:
- *     - true  → always include the official (non-CORS) URL
- *     - false → never include it
- *     - omit  → include only outside browser document runtimes
+ *     - true  → always include the official URL
+ *     - false → never include it (relay-only probes/tests)
+ *     - omit  → include it in browser and Node; dhlottery reflects Origin on simple GET
  */
 export function buildBuiltinCorsFetchUrls(targetUrl, options = {}) {
     const url = String(targetUrl || '').trim();
@@ -50,9 +43,10 @@ export function buildBuiltinCorsFetchUrls(targetUrl, options = {}) {
     const includeDirectOfficial =
         typeof options.includeDirectOfficial === 'boolean'
             ? options.includeDirectOfficial
-            : !isBrowserDocumentRuntime();
+            : true;
 
     return BUILTIN_CORS_PROVIDERS.filter((provider) => {
+        if (provider.label === '공식 API' && !includeDirectOfficial) return false;
         if (provider.browserDirect === false && !includeDirectOfficial) return false;
         return true;
     }).map((provider) => ({

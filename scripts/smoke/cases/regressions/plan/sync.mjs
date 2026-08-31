@@ -133,6 +133,11 @@ const syncPlan = [
         awaited: true
     },
     {
+        name: 'runSyncFetchNetworkErrorContinuesRegression',
+        label: 'sync fetch network error continues regression',
+        awaited: true
+    },
+    {
         name: 'runSyncThirdPartyProviderNoticeRegression',
         label: 'sync third-party provider notice regression',
         awaited: true

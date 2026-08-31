@@ -8,7 +8,7 @@ Current handoff note for agents working on `lotto-pension-pro-webapp`.
 - Package/repository slug: `lotto-pension-pro-webapp`
 - App type: no-build static SPA
 - Primary entry flow: `index.html` -> `assets/modules/index.js` -> `assets/modules/core/LottoApp.js`
-- Service worker cache version: `v31`
+- Service worker cache version: `v32`
 
 ## Current Data Baseline
 
@@ -83,7 +83,7 @@ Current handoff note for agents working on `lotto-pension-pro-webapp`.
 - Strategy worker requests clean `pending` timers if `worker.postMessage()` fails synchronously.
 - Auto-sync availability is computed from recent failure state, last success time, and available sync path instead of being hard-coded.
 - DOM selector contract and focused implementation regressions live in the smoke suite.
-- Browser built-in sync skips the direct official (CORS-blocked) URL and uses public CORS relays only; Node/scripts still include the direct official candidate.
+- Browser built-in sync tries the official dhlottery URL first (simple GET CORS; Origin is reflected). Public CORS relays remain fallbacks: corsproxy.io currently requires an API key (HTTP 401), and CodeTabs is last-resort. `includeDirectOfficial: false` keeps relay-only probes.
 - URL query proxy (`?proxyUrl=` / `?proxy=`) is fail-closed: without `UIManager.confirm`, the query proxy is suppressed for the session.
 - Generator/campaign generation blocks when `winningStats` is empty.
 - Cross-tab rehydrate warns when local dirty state overlapped with a remote tab write.

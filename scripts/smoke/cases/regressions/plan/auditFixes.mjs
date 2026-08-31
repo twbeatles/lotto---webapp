@@ -4,6 +4,11 @@ const auditFixesPlan = [
         label: 'pension720 remote fetch candidate regression'
     },
     {
+        name: 'runPension720OfficialRemoteSimpleCorsRegression',
+        label: 'pension720 official remote simple CORS regression',
+        awaited: true
+    },
+    {
         name: 'runQueryProxyAckRegression',
         label: 'query proxy acknowledgement regression'
     },

@@ -75,7 +75,7 @@ async function runServiceWorkerReloadPolicyRegression() {
 
 async function runServiceWorkerCoreDataPrecacheRegression() {
     const swSource = await readFile(resolve(process.cwd(), 'sw.js'), 'utf8');
-    assert.match(swSource, /const CACHE_VERSION = 'v31';/, 'service worker cache version must match release baseline');
+    assert.match(swSource, /const CACHE_VERSION = 'v32';/, 'service worker cache version must match release baseline');
     assert.match(
         swSource,
         /lotto-pension-pro-app-shell-/,

@@ -225,14 +225,32 @@ function runBuiltInSyncProviderRegression() {
         'built-in sync may still keep CodeTabs as a last fallback provider'
     );
 
-    const browserSafe = buildBuiltinCorsFetchUrls(
-        'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do?srchLtEpsd=1215',
-        { includeDirectOfficial: false }
-    );
+    const officialTargetUrl = 'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do?srchLtEpsd=1215';
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window');
+    const hadDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
+    globalThis.document = {};
+    globalThis.window = { document: globalThis.document };
+    try {
+        const browserRuntime = buildBuiltinCorsFetchUrls(officialTargetUrl);
+        assert.equal(
+            browserRuntime[0]?.label,
+            '공식 API',
+            'browser document runtime must try the official API first; dhlottery reflects Origin on simple GET'
+        );
+    } finally {
+        if (hadWindow) globalThis.window = previousWindow;
+        else delete globalThis.window;
+        if (hadDocument) globalThis.document = previousDocument;
+        else delete globalThis.document;
+    }
+
+    const browserSafe = buildBuiltinCorsFetchUrls(officialTargetUrl, { includeDirectOfficial: false });
     assert.equal(
         browserSafe.some((item) => item.label === '공식 API'),
         false,
-        'browser-safe built-in list must skip the direct official API candidate'
+        'explicit includeDirectOfficial:false must still skip the direct official API candidate'
     );
     const browserCorsproxy = browserSafe.find((item) => item.label === 'corsproxy.io');
     assert.ok(browserCorsproxy, 'browser-safe built-in list must keep corsproxy.io');
@@ -298,6 +316,17 @@ function runCorsRelayContractRegression() {
         serverSide.kind,
         'origin_policy',
         'Node/server corsproxy.io probes must not be treated as a URL-contract break'
+    );
+
+    const apiKeyRequired = classifyCorsRelayFailure({
+        status: 401,
+        body: JSON.stringify({ error: 'A valid API key is required. Get one at https://console.corsproxy.io/' }),
+        url: current
+    });
+    assert.equal(
+        apiKeyRequired.kind,
+        'origin_policy',
+        'corsproxy.io keyless 401 must be origin_policy, not a URL-contract break or scheduled-hard fail'
     );
 }
 
@@ -451,6 +480,48 @@ async function runSyncFetchHttpErrorContinuesRegression() {
     }
 }
 
+async function runSyncFetchNetworkErrorContinuesRegression() {
+    const dm = new DataManager();
+    const originalFetch = globalThis.fetch;
+    const logs = [];
+
+    globalThis.fetch = async (url) => {
+        if (String(url).includes('blocked')) {
+            throw new TypeError('Failed to fetch');
+        }
+        return {
+            ok: true,
+            status: 200,
+            text: async () =>
+                JSON.stringify({
+                    draw_no: 1215,
+                    date: '2026-05-10',
+                    numbers: [1, 2, 3, 4, 5, 6],
+                    bonus: 7
+                })
+        };
+    };
+
+    try {
+        dm.buildCustomSingleFetchUrls = () => [];
+        dm.buildBuiltInSingleFetchUrls = () => [
+            { label: 'corsproxy.io', url: 'https://corsproxy.io/?blocked' },
+            { label: '공식 API', url: 'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do?srchLtEpsd=1215' }
+        ];
+
+        const item = await dm.fetchOneDraw(1215, { url: '', source: 'built-in' }, (message, code, meta) => {
+            logs.push({ message, code, meta });
+        });
+        assert.equal(Number(item?.draw_no), 1215, 'fetchOneDraw must continue after a network/CORS TypeError');
+        assert.ok(
+            logs.some((entry) => entry.code === 'SYNC_FETCH_ONE_FAIL' && entry.meta?.source === 'corsproxy.io'),
+            'network/CORS failures must be logged to the sync callback so browser canaries show fallback attempts'
+        );
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+}
+
 async function runSyncThirdPartyProviderNoticeRegression() {
     const rangeSource = await readFile(
         resolve(process.cwd(), 'assets/modules/core/data/sync/range/fetchSingle.js'),
@@ -482,5 +553,6 @@ export {
     runCorsRelayProviderSourceRegression,
     runSyncFetchTimeoutAbortClassificationRegression,
     runSyncFetchHttpErrorContinuesRegression,
+    runSyncFetchNetworkErrorContinuesRegression,
     runSyncThirdPartyProviderNoticeRegression
 };

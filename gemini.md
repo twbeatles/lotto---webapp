@@ -8,7 +8,7 @@ Fast-start context for Gemini-family agents working on `lotto-pension-pro-webapp
 - Package/repository slug: `lotto-pension-pro-webapp`
 - App shell: no-build static SPA
 - Entry: `index.html` -> `assets/modules/index.js` -> `assets/modules/core/LottoApp.js`
-- PWA cache version: `v31`
+- PWA cache version: `v32`
 
 ## Current Snapshot
 
@@ -73,7 +73,7 @@ Fast-start context for Gemini-family agents working on `lotto-pension-pro-webapp
 - Cloudflare Worker proxy requests share the app Lotto draw schedule helper and reject public single/range requests beyond estimated latest draw `+1`.
 - Strategy worker requests clean `pending` timers if `worker.postMessage()` fails synchronously.
 - Auto-sync availability is computed from recent failure state, last success time, and available sync path.
-- Browser built-in sync skips the direct official URL; query `proxyUrl` requires confirm (fail-closed without confirm UI).
+- Browser built-in sync tries the official dhlottery URL first (simple GET CORS). corsproxy.io is a key-required fallback (HTTP 401 without a key). Query `proxyUrl` requires confirm (fail-closed without confirm UI).
 - Progressive CSP on `index.html`; PWA update flushes pending localStorage before reload; cache-health UI is Korean.
 - Worker optional `CORS_ALLOWED_ORIGINS`; `?url=` passthrough limited to `/lt645/` and `/pt720/` on dhlottery.
 - `npm run check:asset-versions` is part of `build` / `ci:verify`.

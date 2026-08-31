@@ -40,6 +40,26 @@ function runPension720RemoteFetchCandidateRegression() {
         'pension720 corsproxy.io candidate must use the current ?url= API'
     );
 
+    const previousWindow = globalThis.window;
+    const previousDocument = globalThis.document;
+    const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window');
+    const hadDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
+    globalThis.document = {};
+    globalThis.window = { document: globalThis.document };
+    try {
+        const browserCandidates = buildPension720RemoteFetchCandidates(null);
+        assert.equal(
+            browserCandidates[0]?.label,
+            '공식 API',
+            'browser pension720 remote fetch must try the official API first'
+        );
+    } finally {
+        if (hadWindow) globalThis.window = previousWindow;
+        else delete globalThis.window;
+        if (hadDocument) globalThis.document = previousDocument;
+        else delete globalThis.document;
+    }
+
     const payload = parsePension720RemotePayload(
         JSON.stringify({ data: { result: [{ psltEpsd: 10, wnBndNo: 2, wnRnkVl: '123456', bnsRnkVl: '654321', psltRflYmd: '20260601' }] } })
     );
@@ -318,8 +338,24 @@ function runPension720SyncMetaRegression() {
     assert.match(failed.lastFailureMessage, /CORS/, 'pension720 sync meta must record failure reason');
 }
 
+function runPension720OfficialRemoteSimpleCorsRegression() {
+    return readFile(resolve(process.cwd(), 'assets/modules/core/data/pension720/stats.js'), 'utf8').then((source) => {
+        assert.equal(
+            /cache:\s*'no-cache'/.test(source),
+            false,
+            'pension720 official remote fetch must not set cache:no-cache (triggers CORS preflight)'
+        );
+        assert.equal(
+            /headers:\s*\{\s*Accept:\s*'application\/json'\s*\}/.test(source),
+            false,
+            'pension720 official remote fetch must not set Accept:application/json (triggers CORS preflight)'
+        );
+    });
+}
+
 export {
     runPension720RemoteFetchCandidateRegression,
+    runPension720OfficialRemoteSimpleCorsRegression,
     runQueryProxyAckRegression,
     runQueryProxyConfirmFailClosedRegression,
     runImportInFlightGuardRegression,

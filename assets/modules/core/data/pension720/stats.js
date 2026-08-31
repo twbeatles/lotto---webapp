@@ -78,7 +78,7 @@ export const dataPension720StatsMethods = {
 
         for (const candidate of candidates) {
             try {
-                const res = await this.fetchWithTimeout(candidate.url, { cache: 'no-cache', headers: { Accept: 'application/json' } }, 7000);
+                const res = await this.fetchWithTimeout(candidate.url, {}, 7000);
                 if (!res.ok) continue;
                 const payload = parsePension720RemotePayload(await res.text());
                 if (!payload) continue;

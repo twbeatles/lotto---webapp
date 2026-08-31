@@ -54,11 +54,17 @@ export function classifyCorsRelayFailure({ status = 0, body = '', url = '' } = {
                 'corsproxy.io rejected the legacy ?<encoded-url> API (keyless_legacy_url). builtinProviders.js must keep https://corsproxy.io/?url='
         };
     }
-    if (/Free usage is limited to localhost/i.test(text) || /Server-side requests are not allowed/i.test(text)) {
+    if (
+        /Free usage is limited to localhost/i.test(text) ||
+        /Server-side requests are not allowed/i.test(text) ||
+        /A valid API key is required/i.test(text) ||
+        /Invalid or inactive API key/i.test(text) ||
+        /console\.corsproxy\.io/i.test(text)
+    ) {
         return {
             kind: 'origin_policy',
             message:
-                'corsproxy.io free tier is browser-Origin only (127.0.0.1 / localhost / github.io); Node/server probes are not the live gate'
+                'corsproxy.io now requires an API key (including browser localhost). Keep it as a fallback only; official dhlottery CORS is the live browser path'
         };
     }
     const code = Number(status) || 0;

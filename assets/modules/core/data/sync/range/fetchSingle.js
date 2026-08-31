@@ -54,6 +54,10 @@ export const dataSyncRangeSingleFetchMethods = {
                     source: candidate.label,
                     message: e.message
                 });
+                log(`${drawNo}회차 요청 실패 (${candidate.label})`, 'SYNC_FETCH_ONE_FAIL', {
+                    source: candidate.label,
+                    message: e.message
+                });
             }
         }
         return null;
