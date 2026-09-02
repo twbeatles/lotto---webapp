@@ -1,9 +1,12 @@
 export const qrScannerParserMethods = {
     parseLottoQr(url) {
-        // Expected format: http://m.dhlottery.co.kr/?v=0861q020612162843q...
+        // Official paper tickets encode:
+        //   https://m.dhlottery.co.kr/?v={draw}q{game}q...
+        //   https://dhlottery.co.kr/qr.do?method=winQr&v={draw}{type}{game}...
+        // Type letters: q=수동, m=자동, n=반자동, s=마지막 게임(+일련번호).
 
         if (!url || typeof url !== 'string') throw new Error('잘못된 주소입니다.');
-        const allowedHosts = new Set(['m.dhlottery.co.kr', 'www.dhlottery.co.kr']);
+        const allowedHosts = new Set(['m.dhlottery.co.kr', 'www.dhlottery.co.kr', 'dhlottery.co.kr']);
         let host;
         try {
             host = new URL(url).hostname.toLowerCase();
@@ -16,42 +19,35 @@ export const qrScannerParserMethods = {
             throw new Error('로또 6/45 공식 큐알 코드가 아닙니다.');
         }
 
-        // Extract 'v' parameter
         let vParam = '';
         try {
             const urlObj = new URL(url);
             vParam = urlObj.searchParams.get('v');
         } catch (e) {
-            // Fallback for partial URLs or weird formats
             const match = url.match(/[?&]v=([^&]+)/);
             if (match) vParam = match[1];
         }
 
         if (!vParam) throw new Error('큐알 코드에 로또 데이터(v 파라미터)가 없습니다.');
 
-        // Parse games (separated by 'q')
-        // Format: [DrawNo]q[Game1]q[Game2]...
-        const parts = vParam.split('q');
-        if (parts.length < 2) throw new Error('데이터 형식이 올바르지 않습니다.');
-        const drawNo = Number.parseInt(parts[0], 10);
+        const payload = String(vParam).trim();
+        const drawMatch = payload.match(/^(\d+)(?=[a-z])/i);
+        if (!drawMatch) throw new Error('데이터 형식이 올바르지 않습니다.');
+        const drawNo = Number.parseInt(drawMatch[1], 10);
         if (!Number.isInteger(drawNo) || drawNo < 1) {
             throw new Error('큐알 코드에 유효한 회차 정보가 없습니다.');
         }
 
+        const gameChunks = payload.slice(drawMatch[1].length).split(/[a-z]+/i);
         const games = [];
-        for (let i = 1; i < parts.length; i++) {
-            const gameStr = parts[i].trim();
-            // Need at least 12 digits (6 numbers * 2 chars)
-            if (gameStr.length < 12) continue;
+        for (const gameStr of gameChunks) {
+            const numsStr = String(gameStr || '').trim().slice(0, 12);
+            if (!/^\d{12}$/.test(numsStr)) continue;
 
-            const numsStr = gameStr.substring(0, 12);
             const nums = [];
-            // Parse pairs
             for (let j = 0; j < 12; j += 2) {
-                const n = parseInt(numsStr.substring(j, j + 2), 10);
-                if (!isNaN(n) && n >= 1 && n <= 45) {
-                    nums.push(n);
-                }
+                const n = Number.parseInt(numsStr.slice(j, j + 2), 10);
+                if (Number.isInteger(n) && n >= 1 && n <= 45) nums.push(n);
             }
 
             if (nums.length === 6 && new Set(nums).size === 6) {

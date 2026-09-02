@@ -25,12 +25,39 @@ function runQrValidationRegression() {
 
     assert.deepEqual(ok[0].numbers, [1, 2, 3, 4, 5, 6], 'QR parser must preserve ticket numbers');
 
+    const apexQr = parse('https://dhlottery.co.kr/qr.do?method=winQr&v=1071q010203040506q070809101112');
+    assert.equal(apexQr.length, 2, 'apex dhlottery.co.kr /qr.do QR must be accepted');
+    assert.equal(apexQr[0].targetDrawNo, 1071, 'qr.do payload must preserve draw number');
+    assert.deepEqual(apexQr[1].numbers, [7, 8, 9, 10, 11, 12], 'second q-game must be parsed');
+
+    const mixedTypes = parse(
+        'https://m.dhlottery.co.kr/qr.do?method=winQr&v=1157m050712202526q010203040506n070809101112s131415161718101654792'
+    );
+    assert.equal(mixedTypes.length, 4, 'official m/q/n/s game markers must each yield a game');
+    assert.equal(mixedTypes[0].targetDrawNo, 1157, 'draw number before type letter must be preserved');
+    assert.deepEqual(mixedTypes[0].numbers, [5, 7, 12, 20, 25, 26], 'leading auto (m) game must not be dropped');
+    assert.deepEqual(mixedTypes[1].numbers, [1, 2, 3, 4, 5, 6], 'manual (q) game must be parsed');
+    assert.deepEqual(mixedTypes[2].numbers, [7, 8, 9, 10, 11, 12], 'semi-auto (n) game must be parsed');
+    assert.deepEqual(
+        mixedTypes[3].numbers,
+        [13, 14, 15, 16, 17, 18],
+        'final (s) game must ignore trailing serial digits'
+    );
+
     assert.throws(
         () => parse('https://evil.example.com/?v=0861q010203040506'),
 
         /공식 큐알 코드/,
 
         'non-official host must be rejected'
+    );
+
+    assert.throws(
+        () => parse('https://evil.dhlottery.co.kr/?v=0861q010203040506'),
+
+        /공식 큐알 코드/,
+
+        'lookalike dhlottery subdomain must be rejected'
     );
 
     assert.throws(

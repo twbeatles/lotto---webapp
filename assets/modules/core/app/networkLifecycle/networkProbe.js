@@ -28,7 +28,7 @@ export const appNetworkLifecycleProbeMethods = {
             }
         }
 
-        push('공식 로또 웹', 'https://www.dhlottery.co.kr/common.do?method=main');
+        push('공식 로또 웹', 'https://www.dhlottery.co.kr/');
         return targets;
     },
 

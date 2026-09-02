@@ -47,18 +47,20 @@
 
 ### 2.2 문서 기준 데이터 베이스라인 (Claude.md)
 
+현재 운영 베이스라인은 `claude.md` Current Data Baseline을 따른다. 바로 아래 표는 그 현재 값이다. 이어서 나오는 “감사 시점 파일 검증”은 **2026-07-29 감사 스냅샷**이며 당시 수치를 보존한다.
+
 | 데이터 | 파일 | 문서 기준 |
 |--------|------|-----------|
-| 로또 6/45 | `data/winning_stats.json` | latest `1232`, rows `1231`, missing `[146]` |
-| 연금복권720+ | `data/pension720_stats.json` | latest `323` (`2026-07-09`, `4조 604270` / bonus `945893`) |
-| SW | `sw.js` | `CACHE_VERSION = v31` |
+| 로또 6/45 | `data/winning_stats.json` | latest `1239`, rows `1238`, missing `[146]` |
+| 연금복권720+ | `data/pension720_stats.json` | latest `330` (`2026-08-27`, `4조 125905` / bonus `493800`) |
+| SW | `sw.js` | `CACHE_VERSION = v32` |
 | Strategy worker | config | `STRATEGY_WORKER_ASSET_VERSION = v23` |
 
-감사 시점 파일 검증:
+감사 시점 파일 검증 (2026-07-29):
 
-- 로또: rows `1231`, max draw `1232` (오름차순 저장, 문서와 일치)
-- 연금: rows `323`, latest draw `323` (문서와 일치)
-- 스케줄 추정(KST): 로또 **1234**, 연금 **325** → 정적 데이터가 추정 대비 **2회차 지연**
+- 로또: rows `1231`, max draw `1232` (오름차순 저장, 당시 문서와 일치)
+- 연금: rows `323`, latest draw `323` (당시 문서와 일치)
+- 스케줄 추정(KST): 로또 **1234**, 연금 **325** → 당시 정적 데이터가 추정 대비 **2회차 지연**
 
 ### 2.3 아키텍처 (CodeGraph 기반)
 

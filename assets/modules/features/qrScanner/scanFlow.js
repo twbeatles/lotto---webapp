@@ -5,7 +5,7 @@ export const qrScannerScanFlowMethods = {
         if (this.isHandlingSuccess) return;
         this.isHandlingSuccess = true;
 
-        // Example format: http://m.dhlottery.co.kr/?v=0861q020612162843q030614182235q121330363842q172930333738q1123283236441316130938
+        // Official paper QR: http(s)://m.dhlottery.co.kr/?v=... or /qr.do?method=winQr&v=...
         // Parse logic here
         // Parse logic here
         // console.log(`Scan result: ${decodedText}`);

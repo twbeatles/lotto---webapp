@@ -142,7 +142,7 @@ const fetchOfficialRaw = async (drawNo) => {
             method: 'GET',
             headers: {
                 'User-Agent': 'Mozilla/5.0',
-                Referer: 'https://www.dhlottery.co.kr/lt645/lotto645_more.do',
+                Referer: 'https://www.dhlottery.co.kr/lt645/intro',
                 Accept: 'application/json, text/javascript, */*; q=0.01',
                 'X-Requested-With': 'XMLHttpRequest'
             }

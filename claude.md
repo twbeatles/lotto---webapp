@@ -92,6 +92,9 @@ Current handoff note for agents working on `lotto-pension-pro-webapp`.
 - PWA cache-health UI copy is Korean (`UI_STRINGS.pwa`).
 - Progressive CSP meta is set on `index.html` (`default-src 'self'`, `connect-src 'self' https:` for custom proxies/relays).
 - Constrained clients (coarse pointer / narrow viewport) prefer analysis preset `fast` when fields are still stock `basic`.
+- Official Lotto JSON is `https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do?srchLtEpsd=`; Pension720+ JSON is `https://www.dhlottery.co.kr/pt720/selectPstPt720WnList.do`. The legacy `common.do?method=getLottoNumber` endpoint now returns HTML and is unused.
+- Paper QR parsing accepts `m.dhlottery.co.kr`, `www.dhlottery.co.kr`, and apex `dhlottery.co.kr`, including `/qr.do?method=winQr` payloads with `q`/`m`/`n`/`s` game markers. Lookalike subdomains are rejected.
+- Network reachability probe uses `https://www.dhlottery.co.kr/`; the Cloudflare Worker Lotto Referer uses `/lt645/intro`.
 - Cloudflare Worker (`proxy/worker.js`): optional `CORS_ALLOWED_ORIGINS`; `?url=` passthrough limited to `www.dhlottery.co.kr` paths under `/lt645/` and `/pt720/`.
 - `npm run check:asset-versions` guards `CACHE_VERSION` / `STRATEGY_WORKER_ASSET_VERSION` wiring (and git-base bumps when available).
 - Audit reports: `PROJECT_AUDIT.md` (functional), `PROJECT_AUDIT_SCOPES.md` (performance/a11y/PWA/security/CI).
@@ -100,6 +103,7 @@ Current handoff note for agents working on `lotto-pension-pro-webapp`.
 
 - Lotto 6/45:
     - Bundled static JSON is loaded first.
+    - Official per-draw JSON is `lt645/selectPstLt645Info.do?srchLtEpsd=`.
     - Runtime sync can use the official API, supported custom `/proxy/latest`, and built-in fallback providers.
     - The Cloudflare Worker proxy uses the same KST draw schedule helper as the app and rejects public single/range requests beyond estimated latest draw `+1`.
     - `npm run check:data-freshness` fails if static data is more than one draw behind the estimated latest draw.

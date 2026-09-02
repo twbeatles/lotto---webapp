@@ -35,7 +35,7 @@ Fast-start context for Gemini-family agents working on `lotto-pension-pro-webapp
 - `번호 추천`: Strategy-based Lotto 6/45 recommendation with analysis presets and reproducible seed.
 - `연금복권`: Pension720+ stats, dedicated recommendation strategies, presets, group/digit filters, separate campaigns, expansion group suggestions, saved-number list, copy/CSV export, target-draw-aware check with latest-draw reference fallback.
 - `시뮬레이션`: Lotto 6/45 strategy backtest.
-- `당첨 확인`: saved Lotto 6/45 ticket comparison and QR scan flow.
+- `당첨 확인`: saved Lotto 6/45 ticket comparison and official paper QR scan (`dhlottery.co.kr` / `qr.do`, `q`/`m`/`n`/`s` game markers).
 - `데이터 관리`: backup/import, saved lists, local update cleanup, storage summary.
 
 ## Important Contracts
@@ -83,7 +83,8 @@ Fast-start context for Gemini-family agents working on `lotto-pension-pro-webapp
 
 ## Sync and Persistence
 
-- Lotto 6/45 static data loads from `data/winning_stats.json`, then runtime sync may supplement via official/fallback providers.
+- Lotto 6/45 static data loads from `data/winning_stats.json`, then runtime sync may supplement via official `lt645/selectPstLt645Info.do` / fallback providers. The legacy `common.do?method=getLottoNumber` endpoint now returns HTML and is unused.
+- Official paper QR hosts are `m.dhlottery.co.kr`, `www.dhlottery.co.kr`, and apex `dhlottery.co.kr`. Network probe uses `https://www.dhlottery.co.kr/`; Worker Lotto Referer uses `/lt645/intro`.
 - Advanced data connection is supported only for absolute URLs whose path contains `/proxy/latest`.
 - `/proxy/latest` and `/proxy/range` reject future requests above estimated latest draw `+1` and return `maxDrawNo`.
 - Pension720+ data is fetched from official `selectPstPt720WnList.do` by `scripts/fetch_pension720_stats.mjs`.
